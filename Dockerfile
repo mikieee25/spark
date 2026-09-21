@@ -24,6 +24,9 @@ COPY --from=builder --chown=spark:spark /app/.next ./.next
 COPY --from=builder --chown=spark:spark /app/public ./public
 COPY --from=builder --chown=spark:spark /app/next.config.mjs ./next.config.mjs
 COPY --from=builder --chown=spark:spark /app/package.json ./package.json
+COPY --from=builder --chown=spark:spark /app/tsconfig.json ./tsconfig.json
+COPY --from=builder --chown=spark:spark /app/scripts ./scripts
+COPY --from=builder --chown=spark:spark /app/src ./src
 COPY --from=builder --chown=spark:spark /app/server.mjs ./server.mjs
 COPY --chown=spark:spark docker/entrypoint.sh /usr/local/bin/spark-entrypoint
 RUN chmod 0555 /usr/local/bin/spark-entrypoint
