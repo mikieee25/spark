@@ -4,6 +4,8 @@
 
 Phase 1 provides validated configuration, SQLite migrations, local accounts, hardened opaque sessions, a protected responsive shell, health probes, and Docker deployment. File CRUD and activity tracking begin in Phase 2.
 
+The current execution order is UI-first: the file workspace is being refined against mock data while Phase 1 deployment work is deferred. Mock interactions are browser-local and do not touch OneDrive or persistent storage.
+
 ## Requirements
 
 - Node.js 24 LTS for production; Node.js 24–26 for development

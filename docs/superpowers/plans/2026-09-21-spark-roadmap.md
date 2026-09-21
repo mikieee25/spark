@@ -24,6 +24,12 @@
 
 ---
 
+## Current execution order
+
+The active sprint is UI-first: build and review the DOE file-workspace experience with mock data before completing the Foundation deployment gate. Phase 1 is intentionally deferred until the visual direction is accepted. It remains a prerequisite for real filesystem persistence, activity records, and production deployment; the UI prototype does not mutate storage.
+
+---
+
 ## Phase Plans
 
 ### Phase 1: Foundation

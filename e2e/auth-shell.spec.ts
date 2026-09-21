@@ -13,7 +13,7 @@ test("administrator authentication protects the SPARK shell", async ({ page }) =
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/files$/);
   await expect(page.getByRole("link", { name: "Administration" })).toBeVisible();
-  await expect(page.getByRole("main", { name: "Content" })).toContainText("shared records");
+  await expect(page.getByRole("main", { name: "Content" })).toContainText("Shared files");
 
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page).toHaveURL(/\/login$/);

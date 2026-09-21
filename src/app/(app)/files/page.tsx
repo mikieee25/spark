@@ -1,3 +1,5 @@
+import { FileWorkspace } from "@/features/files/file-workspace";
+
 export default function FilesPage() {
-  return <section className="mx-auto max-w-6xl"><div className="rounded-3xl bg-[var(--canvas-deep)] p-7 text-white shadow-[var(--shadow)] sm:p-10"><p className="text-xs font-black uppercase tracking-[0.24em] text-[var(--doe-yellow)]">Workspace foundation</p><h1 className="mt-3 max-w-2xl text-3xl font-black tracking-tight sm:text-5xl">Your shared records, ready for the next phase.</h1><p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">The secure application shell is active. File browsing, upload, folders, and activity tracking arrive in Phase 2.</p></div><div className="mt-6 grid gap-4 sm:grid-cols-3">{[["Protected", "Local account sessions"], ["Auditable", "Activity foundation ready"], ["Local-first", "OneDrive-backed file mount"]].map(([title, text]) => <article key={title} className="rounded-2xl border border-[var(--line)] bg-[var(--paper)] p-5 shadow-sm"><h2 className="font-bold">{title}</h2><p className="mt-2 text-sm text-[var(--ink-muted)]">{text}</p></article>)}</div></section>;
+  return <FileWorkspace />;
 }
