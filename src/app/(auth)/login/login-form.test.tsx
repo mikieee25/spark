@@ -27,11 +27,20 @@ describe("LoginForm", () => {
   });
 
   it("continues to the protected workspace on success", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ user: { mustChangePassword: false } }) }));
     render(<LoginForm />);
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "alex" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "correct-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/files"));
+  });
+
+  it("takes reset accounts to the required password change", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ user: { mustChangePassword: true } }) }));
+    render(<LoginForm />);
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "alex" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "temporary-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/account/password"));
   });
 });

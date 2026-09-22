@@ -62,7 +62,9 @@ function LogicalPathUri([string]$Path) { return (ApiUri "/api/files?path=$([uri]
 function OriginOf([string]$Url) { return ([uri]$Url).GetLeftPart([System.UriPartial]::Authority) }
 
 try {
-  $root = (Get-Location).Path
+  # Resolve the project root from this script so invocation from C:\SPARK or
+  # C:\SPARK\scripts behaves the same way.
+  $root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
   if (-not $EnvFile) {
     $EnvFile = Join-Path $root ".env"
     if (-not (Test-Path -LiteralPath $EnvFile)) { $EnvFile = Join-Path $root ".env.local" }
@@ -152,7 +154,7 @@ try {
         $smokeLogicalFile = "$smokeFolder/$smokeName"
         $smokeFile = Join-Path $env:TEMP ("spark-validation-{0}.txt" -f ([guid]::NewGuid().ToString("N")))
         Set-Content -LiteralPath $smokeFile -Value "DOE SPARK validation $(Get-Date -Format o)" -NoNewline
-        $folderRequest = Invoke-JsonRequest (ApiUri "/api/files/folders") "POST" @{ path = $smokeFolder }
+        $folderRequest = Invoke-JsonRequest (ApiUri "/api/files/folders") "POST" @{ path = $smokeFolder } $webSession
         Add-Result "Create validation folder" "PASS" $smokeFolder
         $upload = Invoke-WebRequest -Uri (ApiUri "/api/files/uploads") -Method Post -WebSession $webSession -UseBasicParsing -Headers @{ Origin = $origin } -Form @{ directory = $smokeFolder; conflict = "fail"; file = Get-Item -LiteralPath $smokeFile }
         Add-Result "Upload validation file" "PASS" $smokeLogicalFile

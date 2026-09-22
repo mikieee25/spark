@@ -17,7 +17,8 @@ export function LoginForm() {
     try {
       const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: data.get("username"), password: data.get("password") }) });
       if (!response.ok) { setError("The username or password is incorrect."); requestAnimationFrame(() => errorRef.current?.focus()); return; }
-      router.replace("/files"); router.refresh();
+      const result = await response.json() as { user?: { mustChangePassword?: boolean } };
+      router.replace(result.user?.mustChangePassword ? "/account/password" : "/files"); router.refresh();
     } catch { setError("SPARK could not be reached. Try again."); requestAnimationFrame(() => errorRef.current?.focus()); }
     finally { setPending(false); }
   }
