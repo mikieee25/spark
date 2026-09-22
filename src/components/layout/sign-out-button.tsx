@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 
 export function SignOutButton() {
   const router = useRouter();
@@ -9,5 +10,5 @@ export function SignOutButton() {
     router.replace("/login");
     router.refresh();
   }
-  return <button type="button" onClick={signOut} className="w-full rounded-xl border border-[var(--line)] px-4 py-3 text-left text-sm font-bold hover:bg-[var(--paper-dim)]">Sign out</button>;
+  return <Button type="button" variant="outline" className="w-full justify-start" onClick={signOut}>Sign out</Button>;
 }

@@ -20,4 +20,11 @@ describe("passwords", () => {
     await expect(hashPassword("short")) .rejects.toThrow("12 to 128");
     await expect(hashPassword("🙂".repeat(129))).rejects.toThrow("12 to 128");
   });
+
+  it("requires at least 6 Unicode lowercase letters", async () => {
+    await expect(hashPassword("ABCDEFGHIJKL12"))
+      .rejects.toThrow("6 lowercase");
+    await expect(hashPassword("áéíóúñ123456"))
+      .resolves.toMatch(/^\$argon2id\$/);
+  });
 });

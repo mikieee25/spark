@@ -4,19 +4,19 @@ services:
     image: doe-spark:local
     restart: unless-stopped
     ports:
-      - "${SPARK_PORT:-3000}:3000"
+      - "${SPARK_PORT:-38173}:3000"
     environment:
-      SPARK_ORIGIN: "${SPARK_ORIGIN:-http://localhost:3000}"
+      SPARK_ORIGIN: "${SPARK_ORIGIN:-http://localhost:38173}"
       SPARK_DATA_DIR: /data
       SPARK_FILES_ROOT: /files
       SPARK_SESSION_SECRET: "${SPARK_SESSION_SECRET:?Set SPARK_SESSION_SECRET to at least 32 random characters}"
       SPARK_TRUST_PROXY: "${SPARK_TRUST_PROXY:-false}"
     volumes:
       - type: bind
-        source: "${SPARK_DATA_DIR_HOST:?Set SPARK_DATA_DIR_HOST}"
+        source: "${SPARK_DATA_DIR_HOST:-./spark-data}"
         target: /data
       - type: bind
-        source: "${SPARK_FILES_ROOT_HOST:?Set SPARK_FILES_ROOT_HOST}"
+        source: "${SPARK_FILES_ROOT_HOST:-D:/EUMB/OneDrive - Department of Energy, DBM PS/EPRED OneDrive Access}"
         target: /files
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]

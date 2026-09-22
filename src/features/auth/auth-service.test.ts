@@ -47,6 +47,8 @@ describe("authenticate", () => {
       expect(result.user).not.toHaveProperty("password_hash");
       expect(result.token).toBeTruthy();
     }
+    expect(database.prepare("SELECT action, outcome FROM activity_events ORDER BY occurred_at DESC LIMIT 1").get())
+      .toEqual({ action: "sign_in", outcome: "success" });
   });
 
   it("rejects unknown, incorrect, and disabled accounts", async () => {
@@ -55,6 +57,8 @@ describe("authenticate", () => {
       .resolves.toEqual({ ok: false, reason: "invalid_credentials" });
     await expect(authenticate(database, "Alice", "incorrect-pass", new Date()))
       .resolves.toEqual({ ok: false, reason: "invalid_credentials" });
+    expect(database.prepare("SELECT action, outcome FROM activity_events ORDER BY occurred_at DESC LIMIT 1").get())
+      .toEqual({ action: "failed_authentication", outcome: "failure" });
     database.prepare("UPDATE users SET disabled_at = ? WHERE username = ?")
       .run(new Date().toISOString(), "Alice");
     await expect(authenticate(database, "Alice", "correct-password", new Date()))

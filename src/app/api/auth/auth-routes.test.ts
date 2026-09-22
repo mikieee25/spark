@@ -95,5 +95,7 @@ describe("authentication routes", () => {
 
     expect((await logout(request("{}"))).status).toBe(200);
     expect((await session()).status).toBe(401);
+    expect(database.prepare("SELECT action, outcome FROM activity_events ORDER BY occurred_at DESC, id DESC LIMIT 1").get())
+      .toEqual({ action: "sign_out", outcome: "success" });
   });
 });

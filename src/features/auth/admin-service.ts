@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
+import { recordActivity } from "@/features/activity/activity-repository";
 import { hashPassword } from "./password";
 import type { SessionUser } from "./types";
 
@@ -18,6 +19,7 @@ export async function createAdministrator(
     username,
     displayName,
     role: "admin",
+    mustChangePassword: false,
   };
   try {
     database.prepare(`INSERT INTO users
@@ -31,6 +33,14 @@ export async function createAdministrator(
         now.toISOString(),
         now.toISOString(),
       );
+    recordActivity(database, {
+      actorUserId: user.id,
+      actorType: "user",
+      action: "account_created",
+      paths: [],
+      outcome: "success",
+      occurredAt: now,
+    });
   } catch (error) {
     if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
       throw new Error(`Username already exists: ${username}`, { cause: error });

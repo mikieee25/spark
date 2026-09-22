@@ -6,6 +6,7 @@ export const environmentSchema = z.object({
   SPARK_FILES_ROOT: z.string().trim().min(1),
   SPARK_SESSION_SECRET: z.string().min(32),
   SPARK_TRUST_PROXY: z.enum(["true", "false"]).default("false"),
+  SPARK_TERMINAL_ENABLED: z.enum(["true", "false"]).default("false"),
 });
 
 export type AppConfig = Readonly<{
@@ -15,4 +16,5 @@ export type AppConfig = Readonly<{
   databasePath: string;
   sessionSecret: string;
   trustProxy: boolean;
+  terminalEnabled: boolean;
 }>;

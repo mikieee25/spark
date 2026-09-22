@@ -18,6 +18,7 @@
 
 # next.js
 /.next/
+/.next-e2e/
 /out/
 
 # production
@@ -38,6 +39,9 @@ yarn-error.log*
 !.env.example
 /spark-data/
 /spark-files/
+/dev-files/
+/.superpowers/
+/docs/
 
 # vercel
 .vercel

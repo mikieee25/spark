@@ -59,4 +59,10 @@ describe("sessions", () => {
     revokeSession(database, revoked.token, now);
     expect(resolveSession(database, revoked.token, now)).toBeNull();
   });
+
+  it("returns forced-password-change state from the account", () => {
+    database.prepare("UPDATE users SET must_change_password = 1 WHERE id = ?").run(userId);
+    const session = createSession(database, userId, new Date("2026-09-21T00:00:00Z"));
+    expect(resolveSession(database, session.token, new Date("2026-09-21T00:01:00Z"))).toMatchObject({ mustChangePassword: true });
+  });
 });

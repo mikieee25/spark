@@ -1,7 +1,10 @@
 import readline from "node:readline/promises";
 import { Writable } from "node:stream";
 import { createAdministrator } from "../src/features/auth/admin-service";
+import { loadLocalEnvironment } from "../src/lib/config/load-local-env";
 import { getDatabase } from "../src/lib/db/runtime";
+
+loadLocalEnvironment();
 
 function option(name: string): string | undefined {
   const index = process.argv.indexOf(name);

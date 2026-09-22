@@ -3,6 +3,7 @@ export type SessionUser = {
   username: string;
   displayName: string;
   role: "user" | "admin";
+  mustChangePassword: boolean;
 };
 
 export type AuthResult =

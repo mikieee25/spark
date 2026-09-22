@@ -18,7 +18,7 @@ export default defineConfig({
     timeout: 120_000,
     reuseExistingServer: false,
     gracefulShutdown: { signal: "SIGINT", timeout: 5_000 },
-    env: { ...process.env, PORT: "3199" },
+    env: { ...process.env, PORT: "3199", SPARK_NEXT_DIST_DIR: ".next-e2e" },
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

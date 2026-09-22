@@ -6,6 +6,7 @@ export type UserRecord = {
   display_name: string;
   password_hash: string;
   role: UserRole;
+  must_change_password: number;
   failed_login_count: number;
   locked_until: string | null;
   disabled_at: string | null;

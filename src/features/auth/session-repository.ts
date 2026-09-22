@@ -11,6 +11,7 @@ type SessionRow = {
   username: string;
   display_name: string;
   role: "user" | "admin";
+  must_change_password: number;
   last_seen_at: string;
   expires_at: string;
   revoked_at: string | null;
@@ -43,7 +44,7 @@ export function resolveSession(
   if (!token) return null;
   const hash = tokenHash(token);
   const row = database.prepare(`SELECT
-      u.id, u.username, u.display_name, u.role, u.disabled_at,
+      u.id, u.username, u.display_name, u.role, u.must_change_password, u.disabled_at,
       s.last_seen_at, s.expires_at, s.revoked_at
     FROM sessions s
     JOIN users u ON u.id = s.user_id
@@ -65,6 +66,7 @@ export function resolveSession(
     username: row.username,
     displayName: row.display_name,
     role: row.role,
+    mustChangePassword: Boolean(row.must_change_password),
   };
 }
 
@@ -76,4 +78,40 @@ export function revokeSession(
   if (!token) return;
   database.prepare("UPDATE sessions SET revoked_at = ? WHERE id_hash = ?")
     .run(now.toISOString(), tokenHash(token));
+}
+
+export function revokeUserSessions(database: Database.Database, userId: string, now: Date): number {
+  return database.prepare("UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL")
+    .run(now.toISOString(), userId).changes;
+}
+
+export type SessionRecord = {
+  idHash: string;
+  userId: string;
+  username: string;
+  createdAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+};
+
+export function listSessions(database: Database.Database, userId: string): SessionRecord[] {
+  const rows = database.prepare(`SELECT s.id_hash, s.user_id, u.username, s.created_at,
+      s.last_seen_at, s.expires_at, s.revoked_at
+    FROM sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.user_id = ? ORDER BY s.created_at DESC`).all(userId) as Array<Record<string, unknown>>;
+  return rows.map((row) => ({
+    idHash: row.id_hash as string,
+    userId: row.user_id as string,
+    username: row.username as string,
+    createdAt: row.created_at as string,
+    lastSeenAt: row.last_seen_at as string,
+    expiresAt: row.expires_at as string,
+    revokedAt: row.revoked_at as string | null,
+  }));
+}
+
+export function revokeSessionByHash(database: Database.Database, idHash: string, now: Date): boolean {
+  return database.prepare("UPDATE sessions SET revoked_at = ? WHERE id_hash = ? AND revoked_at IS NULL")
+    .run(now.toISOString(), idHash).changes > 0;
 }

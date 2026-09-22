@@ -55,5 +55,6 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     databasePath: path.join(dataDirectory, "spark.db"),
     sessionSecret: parsed.data.SPARK_SESSION_SECRET,
     trustProxy: parsed.data.SPARK_TRUST_PROXY === "true",
+    terminalEnabled: parsed.data.SPARK_TERMINAL_ENABLED === "true",
   });
 }

@@ -38,7 +38,7 @@ try {
     (database.prepare("SELECT count(*) count FROM sqlite_master WHERE type = 'table' AND name = 'users'").get() as { count: number }).count === 1,
   );
   migrate(database);
-  gate("idempotent migration", (database.prepare("SELECT count(*) count FROM schema_migrations").get() as { count: number }).count === 1);
+  gate("idempotent migration", (database.prepare("SELECT count(*) count FROM schema_migrations").get() as { count: number }).count === 7);
 
   const administrator = await createAdministrator(database, {
     username: "verifier", displayName: "Foundation Verifier", password: "verification-password",

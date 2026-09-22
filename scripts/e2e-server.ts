@@ -12,6 +12,7 @@ const dataDirectory = path.join(root, "data");
 const filesRoot = path.join(root, "files");
 fs.mkdirSync(dataDirectory);
 fs.mkdirSync(filesRoot);
+fs.writeFileSync(path.join(filesRoot, "search-fixture.txt"), "DOE SPARK search fixture", "utf8");
 
 const database = openDatabase(path.join(dataDirectory, "spark.db"));
 migrate(database);

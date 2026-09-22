@@ -21,6 +21,11 @@ describe("loadConfig", () => {
     );
   });
 
+  it("keeps the administrator terminal disabled by default", () => {
+    expect(loadConfig(validEnvironment()).terminalEnabled).toBe(false);
+    expect(loadConfig(validEnvironment({ SPARK_TERMINAL_ENABLED: "true" })).terminalEnabled).toBe(true);
+  });
+
   it("rejects relative roots", () => {
     expect(() =>
       loadConfig(validEnvironment({ SPARK_FILES_ROOT: ".\\files" })),

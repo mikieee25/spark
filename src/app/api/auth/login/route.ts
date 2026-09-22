@@ -5,6 +5,7 @@ import { authenticate } from "@/features/auth/auth-service";
 import { hasValidMutationOrigin } from "@/features/auth/origin";
 import { SESSION_COOKIE_NAME, sessionCookieOptions } from "@/features/auth/session-cookie";
 import { getDatabase } from "@/lib/db/runtime";
+import { loginRateLimiter, rateLimitKey } from "@/lib/http/request-rate-limits";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,8 @@ const loginSchema = z.object({
 const noStore = { "Cache-Control": "private, no-store" };
 
 export async function POST(request: Request): Promise<Response> {
+  const rate = loginRateLimiter.check(rateLimitKey(request));
+  if (!rate.allowed) return NextResponse.json({ error: "RATE_LIMITED" }, { status: 429, headers: { ...noStore, "Retry-After": String(rate.retryAfterSeconds) } });
   if (!hasValidMutationOrigin(request)) {
     return NextResponse.json({ error: "INVALID_ORIGIN" }, { status: 403, headers: noStore });
   }
