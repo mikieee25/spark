@@ -5,8 +5,8 @@ export function BrandLockup({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-3" aria-label={PRODUCT.name}>
       <Image
-        src="/DOE%20LOGO%20OFFICIAL%20PNG.png"
-        alt="Department of Energy seal"
+        src="/spark-icon.svg"
+        alt="SPARK icon"
         width={48}
         height={48}
         className="size-11 shrink-0 rounded-xl object-cover shadow-lg"

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AppShell } from "./app-shell";
 
@@ -15,7 +15,9 @@ describe("AppShell", () => {
     expect(screen.getByLabelText("Sidebar")).toBeInTheDocument();
     expect(screen.getByLabelText("Header")).toBeInTheDocument();
     expect(screen.getByLabelText("Content")).toHaveTextContent("Workspace");
-    expect(screen.getAllByRole("img", { name: "Department of Energy seal" })).toHaveLength(2);
+    expect(screen.getAllByRole("img", { name: "SPARK icon" })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Sidebar")).queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Files" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Files" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("link", { name: "Activity" })).not.toBeInTheDocument();
