@@ -65,6 +65,16 @@ describe("storage adapter", () => {
     await expect(adapter.openReadStream("linked.txt")).rejects.toThrow("SYMLINK_NOT_ALLOWED");
   });
 
+  it("rejects symlinked directory ancestors while listing", async () => {
+    const outside = path.join(data, "outside-directory");
+    await fs.mkdir(outside);
+    await fs.writeFile(path.join(outside, "secret.txt"), "private");
+    await fs.symlink(outside, path.join(root, "linked-directory"), "junction");
+    const adapter = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+
+    await expect(adapter.list("linked-directory")).rejects.toThrow("SYMLINK_NOT_ALLOWED");
+  });
+
   it("rejects directories as ranged or streamed files", async () => {
     await fs.mkdir(path.join(root, "folder"));
     const adapter = createStorageAdapter({ filesRoot: root, dataDirectory: data });

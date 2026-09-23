@@ -11,7 +11,10 @@ export type StorageEntry = Readonly<{ name: string; logicalPath: string; kind: "
 export type StorageStat = StorageEntry;
 export type StagedUpload = Readonly<{ key: string; name: string; sizeBytes: number }>;
 export const MAX_STORAGE_RANGE_BYTES = 8 * 1024 * 1024;
-export const LIST_METADATA_CONCURRENCY = 16;
+// Match the reference explorer's listing fan-out. The Windows bind mount is
+// latency-bound, so keeping only sixteen metadata reads in flight leaves the
+// directory queue under-filled while the container waits on the host disk.
+export const LIST_METADATA_CONCURRENCY = 64;
 
 export type StorageAdapter = Readonly<{
   list(path: string, options?: Readonly<{ cache?: boolean }>): Promise<StorageEntry[]>;

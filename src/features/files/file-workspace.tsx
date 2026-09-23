@@ -22,6 +22,7 @@ type SearchState = "idle" | "loading" | "success" | "error";
 type FolderConflict = Readonly<{ file: File; logicalPath: string }>;
 type Props = Readonly<{ initialPath: string; initialEntries: FileEntry[]; initialFavorites?: Favorite[]; initialRecent?: RecentItem[] }>;
 const AUTO_REFRESH_STORAGE_KEY = "spark-auto-refresh-seconds";
+const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 const AUTO_REFRESH_OPTIONS = [
   { value: 0, label: "Off" },
   { value: 15, label: "15 seconds" },
@@ -46,7 +47,7 @@ function formatSize(size: number): string {
 }
 
 function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  return dateFormatter.format(new Date(value));
 }
 
 function baseName(logicalPath: string): string {
