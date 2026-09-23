@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FileWorkspace } from "./file-workspace";
 import type { FileEntry } from "./file-api";
@@ -63,6 +63,32 @@ describe("FileWorkspace", () => {
     expect(await screen.findByText("Search is unavailable right now.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry search" }));
     expect(await screen.findByText("No matches found")).toBeInTheDocument();
+  });
+
+  it("shows folder-opening feedback while retaining the current listing", async () => {
+    let resolveListing!: (value: Response) => void;
+    vi.mocked(fetch).mockImplementationOnce(() => new Promise((resolve) => { resolveListing = resolve; }));
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+    fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+    expect(screen.getByRole("status", { name: "Opening folder" })).toBeInTheDocument();
+    expect(screen.getByText("Q3 Energy Outlook.pdf")).toBeInTheDocument();
+    resolveListing(new Response(JSON.stringify({ path: "Reports", entries: [] }), { status: 200 }));
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Opening folder" })).not.toBeInTheDocument());
+    expect(screen.getByText("This folder is empty")).toBeInTheDocument();
+  });
+
+  it("refreshes the current folder at the selected interval", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ path: "", entries: [{ ...entries[0], name: "New Reports" }] }), { status: 200 }));
+      render(<FileWorkspace initialPath="" initialEntries={entries} />);
+      fireEvent.change(screen.getByLabelText("Auto-refresh interval"), { target: { value: "15" } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      expect(screen.getByText("New Reports")).toBeInTheDocument();
+      expect(fetch).toHaveBeenCalledWith("/api/files?path=", expect.anything());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("toggles favorites and renders recent items", async () => {

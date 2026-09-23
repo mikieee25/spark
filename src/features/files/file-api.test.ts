@@ -16,4 +16,12 @@ describe("uploadFolder", () => {
     expect(conflict).toHaveBeenCalledWith(expect.objectContaining({ logicalPath: "Reports/brief.txt", file }));
     expect(fetch).toHaveBeenCalledTimes(3);
   });
+
+  it("stops before sending when cancelled", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const file = new File(["DOE"], "brief.txt", { type: "text/plain" });
+    await expect(uploadFolder({ directory: "", files: [file], signal: controller.signal })).rejects.toMatchObject({ code: "UPLOAD_CANCELLED" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });

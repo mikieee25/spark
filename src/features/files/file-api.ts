@@ -21,12 +21,12 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
-export async function listFiles(path = ""): Promise<{ path: string; entries: FileEntry[] }> {
-  return jsonRequest(`/api/files?path=${encodeURIComponent(path)}`);
+export async function listFiles(path = "", signal?: AbortSignal): Promise<{ path: string; entries: FileEntry[] }> {
+  return jsonRequest(`/api/files?path=${encodeURIComponent(path)}`, { signal });
 }
 
-export async function createFolder(path: string): Promise<{ item: FileEntry }> {
-  return jsonRequest("/api/files/folders", { method: "POST", body: JSON.stringify({ path }) });
+export async function createFolder(path: string, signal?: AbortSignal): Promise<{ item: FileEntry }> {
+  return jsonRequest("/api/files/folders", { method: "POST", body: JSON.stringify({ path }), signal });
 }
 
 export async function deleteFile(path: string): Promise<unknown> {
@@ -37,12 +37,12 @@ export async function moveFile(input: { source: string; destination: string; con
   return jsonRequest("/api/files", { method: "PATCH", body: JSON.stringify(input) });
 }
 
-export async function uploadFile(input: { directory: string; file: File; conflict?: ConflictPolicy }): Promise<unknown> {
+export async function uploadFile(input: { directory: string; file: File; conflict?: ConflictPolicy; signal?: AbortSignal }): Promise<unknown> {
   const form = new FormData();
   form.set("directory", input.directory);
   if (input.conflict) form.set("conflict", input.conflict);
   form.set("file", input.file);
-  const response = await fetch("/api/files/uploads", { method: "POST", body: form });
+  const response = await fetch("/api/files/uploads", { method: "POST", body: form, signal: input.signal });
   const body = await response.json().catch(() => ({})) as { error?: string };
   if (!response.ok) throw new FileApiError(body.error ?? "FILESYSTEM_ERROR", response.status);
   return body;
@@ -50,6 +50,10 @@ export async function uploadFile(input: { directory: string; file: File; conflic
 
 type FolderUploadConflict = Readonly<{ file: File; logicalPath: string }>;
 type FolderUploadProgress = Readonly<{ completed: number; total: number; logicalPath: string }>;
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new FileApiError("UPLOAD_CANCELLED", 409);
+}
 
 function joinPath(...parts: string[]): string {
   return parts.filter(Boolean).join("/");
@@ -60,6 +64,7 @@ export async function uploadFolder(input: {
   files: readonly File[];
   onProgress?: (progress: FolderUploadProgress) => void;
   onConflict?: (conflict: FolderUploadConflict) => Promise<ConflictPolicy | "cancel">;
+  signal?: AbortSignal;
 }): Promise<{ uploaded: number; skipped: number }> {
   const files = input.files.filter((file) => file.size >= 0);
   const directories = new Set<string>();
@@ -72,21 +77,27 @@ export async function uploadFolder(input: {
     return { file, logicalPath: joinPath(input.directory, ...segments, name), directory: joinPath(input.directory, ...segments) };
   });
   for (const directory of [...directories].sort((left, right) => left.split("/").length - right.split("/").length)) {
-    try { await createFolder(directory); }
-    catch (error) { if (!(error instanceof FileApiError) || error.status !== 409) throw error; }
+    throwIfAborted(input.signal);
+    try { await createFolder(directory, input.signal); }
+    catch (error) {
+      if (error instanceof FileApiError && error.code === "UPLOAD_CANCELLED") throw error;
+      if (!(error instanceof FileApiError) || error.status !== 409) throw error;
+    }
   }
   let uploaded = 0;
   let skipped = 0;
   for (const item of items) {
+    throwIfAborted(input.signal);
     let conflict: ConflictPolicy | undefined;
     while (true) {
       try {
-        const result = await uploadFile({ directory: item.directory, file: item.file, conflict });
+        const result = await uploadFile({ directory: item.directory, file: item.file, conflict, signal: input.signal });
         if ((result as { skipped?: boolean }).skipped) skipped += 1;
         else uploaded += 1;
         input.onProgress?.({ completed: uploaded + skipped, total: items.length, logicalPath: item.logicalPath });
         break;
       } catch (error) {
+        if (input.signal?.aborted) throw new FileApiError("UPLOAD_CANCELLED", 409);
         if (!(error instanceof FileApiError) || error.status !== 409 || !input.onConflict) throw error;
         const choice = await input.onConflict({ file: item.file, logicalPath: item.logicalPath });
         if (choice === "cancel") throw new FileApiError("UPLOAD_CANCELLED", 409);
