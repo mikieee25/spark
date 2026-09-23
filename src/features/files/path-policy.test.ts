@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { normalizeLogicalPath, validateName } from "./path-policy";
+import { isSafeStorageName, normalizeLogicalPath, validateName } from "./path-policy";
 
 describe("logical path policy", () => {
   it("normalizes safe relative paths", () => {
@@ -21,4 +21,9 @@ describe("logical path policy", () => {
       expect(() => validateName(value)).toThrow("INVALID_NAME");
     },
   );
+
+  it("recognizes invalid names from an external filesystem without accepting them for writes", () => {
+    expect(isSafeStorageName('Memo " MBB.pdf')).toBe(false);
+    expect(isSafeStorageName("report.pdf")).toBe(true);
+  });
 });

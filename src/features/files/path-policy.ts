@@ -11,6 +11,15 @@ export function validateName(name: string): string {
   return name;
 }
 
+export function isSafeStorageName(name: string): boolean {
+  try {
+    validateName(name);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function normalizeLogicalPath(input: string): string {
   if (typeof input !== "string" || input.includes("\\") || input.includes("\u0000") || input.startsWith("/")) {
     throw new Error("INVALID_PATH");

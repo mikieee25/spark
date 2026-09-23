@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { mkdir, lstat, open, readdir, readFile, realpath, rename, rm, stat as statAsync, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { isContained, normalizeLogicalPath, validateName } from "./path-policy";
+import { isContained, isSafeStorageName, normalizeLogicalPath, validateName } from "./path-policy";
 
 export type StorageAdapterConfig = Readonly<{ filesRoot: string; dataDirectory: string }>;
 export type StorageEntry = Readonly<{ name: string; logicalPath: string; kind: "file" | "folder"; sizeBytes: number; modifiedAt: string }>;
@@ -116,6 +116,7 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
 
       let total = 0;
       for (const entry of await readdir(directory, { withFileTypes: true })) {
+        if (!isSafeStorageName(entry.name)) continue;
         if (entry.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
         const childPath = path.join(directory, entry.name);
         const childStat = await lstat(childPath);
@@ -142,6 +143,7 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
       const entries = await readdir(directory, { withFileTypes: true });
       const result: StorageEntry[] = [];
       for (const entry of entries) {
+        if (!isSafeStorageName(entry.name)) continue;
         const childPath = path.join(directory, entry.name);
         if (entry.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
         const childStat = await lstat(childPath);
