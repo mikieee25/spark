@@ -22,17 +22,25 @@ function errorResponse(error: unknown): Response {
 }
 
 export async function GET(request: Request): Promise<Response> {
+  const startedAt = performance.now();
   let access: Awaited<ReturnType<typeof authorizeCapability>>;
   try { access = await authorizeCapability(request, "browse"); } catch (error) { const code = error instanceof Error ? error.message : "UNAUTHENTICATED"; return NextResponse.json({ error: code }, { status: code === "UNAUTHENTICATED" ? 401 : 403, headers: noStore }); }
+  const authMs = performance.now() - startedAt;
   const path = new URL(request.url).searchParams.get("path") ?? "";
   if (access.actorType === "anonymous") { const rate = anonymousReadRateLimiter.check(rateLimitKey(request)); if (!rate.allowed) return NextResponse.json({ error: "RATE_LIMITED" }, { status: 429, headers: { ...noStore, "Retry-After": String(rate.retryAfterSeconds) } }); }
   const parsed = pathSchema.safeParse(path);
   if (!parsed.success) return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400, headers: noStore });
   try {
+    const listStartedAt = performance.now();
     const entries = await getFileService().list(parsed.data);
+    const listMs = performance.now() - listStartedAt;
+    const recentStartedAt = performance.now();
     if (access.user) addRecentItem(getDatabase(), access.user.id, parsed.data);
     else recordActivity(getDatabase(), { actorType: "anonymous", action: "browse", paths: [parsed.data], outcome: "success" });
-    return NextResponse.json({ path: parsed.data, entries }, { headers: noStore });
+    const recentMs = performance.now() - recentStartedAt;
+    const totalMs = performance.now() - startedAt;
+    const serverTiming = `auth;dur=${authMs.toFixed(1)}, list;dur=${listMs.toFixed(1)}, recent;dur=${recentMs.toFixed(1)}, total;dur=${totalMs.toFixed(1)}`;
+    return NextResponse.json({ path: parsed.data, entries }, { headers: { ...noStore, "Server-Timing": serverTiming } });
   } catch (error) {
     return errorResponse(error);
   }

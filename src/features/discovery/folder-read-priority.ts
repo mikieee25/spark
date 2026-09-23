@@ -17,3 +17,10 @@ export function hasActiveFolderReads(): boolean {
 export async function waitForFolderReadsToFinish(): Promise<void> {
   while (hasActiveFolderReads()) await new Promise<void>((resolve) => setTimeout(resolve, 50));
 }
+
+export async function waitForFolderReadQuietPeriod(quietMs: number): Promise<void> {
+  do {
+    await waitForFolderReadsToFinish();
+    await new Promise<void>((resolve) => setTimeout(resolve, quietMs));
+  } while (hasActiveFolderReads());
+}

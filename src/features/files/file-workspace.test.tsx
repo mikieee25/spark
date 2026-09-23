@@ -79,23 +79,66 @@ describe("FileWorkspace", () => {
     expect(await screen.findByText("No matches found")).toBeInTheDocument();
   });
 
-  it("shows folder-opening feedback while retaining the current listing", async () => {
+  it("updates the folder immediately and shows a skeleton while an uncached listing loads", async () => {
     let resolveListing!: (value: Response) => void;
     vi.mocked(fetch).mockImplementationOnce(() => new Promise((resolve) => { resolveListing = resolve; }));
     render(<FileWorkspace initialPath="" initialEntries={entries} />);
     fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+    expect(screen.getByRole("link", { name: "Reports" })).toBeInTheDocument();
     expect(screen.getByRole("status", { name: "Opening folder" })).toBeInTheDocument();
-    expect(screen.getByText("Q3 Energy Outlook.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading folder contents" })).toBeInTheDocument();
+    expect(screen.queryByText("Q3 Energy Outlook.pdf")).not.toBeInTheDocument();
     resolveListing(new Response(JSON.stringify({ path: "Reports", entries: [] }), { status: 200 }));
     await waitFor(() => expect(screen.queryByRole("status", { name: "Opening folder" })).not.toBeInTheDocument());
     expect(screen.getByText("This folder is empty")).toBeInTheDocument();
+  });
+
+  it("ignores an older folder response after navigating back", async () => {
+    let resolveReports!: (value: Response) => void;
+    vi.mocked(fetch)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveReports = resolve; }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ path: "", entries }), { status: 200 }));
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+    expect(screen.getByText("Q3 Energy Outlook.pdf")).toBeInTheDocument();
+
+    resolveReports(new Response(JSON.stringify({
+      path: "Reports",
+      entries: [{ ...entries[1], name: "Late result.pdf", logicalPath: "Reports/Late result.pdf" }],
+    }), { status: 200 }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("Late result.pdf")).not.toBeInTheDocument();
+    expect(screen.getByText("Q3 Energy Outlook.pdf")).toBeInTheDocument();
+  });
+
+  it("shows a previously visited folder immediately while revalidating it", async () => {
+    const reportEntries = [{ ...entries[1], name: "Brief.pdf", logicalPath: "Reports/Brief.pdf" }];
+    let resolveRootRefresh!: (value: Response) => void;
+    vi.mocked(fetch).mockImplementation((input) => {
+      const url = String(input);
+      if (url === "/api/files?path=Reports") return Promise.resolve(new Response(JSON.stringify({ path: "Reports", entries: reportEntries }), { status: 200 }));
+      if (url === "/api/files?path=") return new Promise((resolve) => { resolveRootRefresh = resolve; });
+      return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    });
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+    expect(await screen.findByText("Brief.pdf")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+
+    expect(screen.getByText("Q3 Energy Outlook.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Opening folder" })).toBeInTheDocument();
+    resolveRootRefresh(new Response(JSON.stringify({ path: "", entries }), { status: 200 }));
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Opening folder" })).not.toBeInTheDocument());
   });
 
   it("navigates to the parent folder with the back button", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ path: "Reports", entries: [entries[0]] }), { status: 200 }));
     render(<FileWorkspace initialPath="Reports/2026" initialEntries={entries} />);
     fireEvent.click(screen.getByRole("button", { name: "Go back" }));
-    expect(await screen.findByText("Reports")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Reports" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith("/api/files?path=Reports", expect.anything());
   });
 
@@ -108,6 +151,30 @@ describe("FileWorkspace", () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
       expect(screen.getByText("New Reports")).toBeInTheDocument();
       expect(fetch).toHaveBeenCalledWith("/api/files?path=", expect.anything());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not let an older auto-refresh overwrite a newly opened folder", async () => {
+    vi.useFakeTimers();
+    let resolveRefresh!: (value: Response) => void;
+    try {
+      vi.mocked(fetch)
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve; }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ path: "Reports", entries: [{ ...entries[1], name: "Brief.pdf", logicalPath: "Reports/Brief.pdf" }] }), { status: 200 }));
+      render(<FileWorkspace initialPath="" initialEntries={entries} />);
+      fireEvent.change(screen.getByLabelText("Auto-refresh interval"), { target: { value: "15" } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+
+      fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+      expect(screen.getByText("Brief.pdf")).toBeInTheDocument();
+      resolveRefresh(new Response(JSON.stringify({ path: "", entries: [{ ...entries[1], name: "Stale root.pdf" }] }), { status: 200 }));
+      await act(async () => { await Promise.resolve(); });
+
+      expect(screen.queryByText("Stale root.pdf")).not.toBeInTheDocument();
+      expect(screen.getByText("Brief.pdf")).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
     }

@@ -38,6 +38,7 @@ describe("file routes", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ path: "Reports", entries: [{ name: "note.txt", kind: "file" }] });
     expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("server-timing")).toMatch(/^auth;dur=\d+(?:\.\d+)?, list;dur=\d+(?:\.\d+)?, recent;dur=\d+(?:\.\d+)?, total;dur=\d+(?:\.\d+)?$/);
     expect(mocks.recent).toHaveBeenCalledWith({}, "user-1", "Reports");
   });
 

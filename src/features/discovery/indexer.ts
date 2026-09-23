@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { MAX_INDEXED_TEXT_BYTES, replaceIndexEntry, replaceIndexText, updateIndexState } from "./discovery-repository";
+import { getIndexEntry, MAX_INDEXED_TEXT_BYTES, replaceIndexEntry, replaceIndexText, updateIndexState } from "./discovery-repository";
 import { classifyContent } from "./content-classifier";
 import type { StorageAdapter, StorageEntry } from "@/features/files/storage-adapter";
 import { waitForFolderReadsToFinish } from "./folder-read-priority";
@@ -39,16 +39,25 @@ export async function runIndexMaintenance({ database, storage, maxEntries = 100 
     await waitForFolderReadsToFinish();
     const { entries: pending, complete } = await nextEntries(storage, cursor, limit);
     for (const entry of pending) {
+      await waitForFolderReadsToFinish();
       const classification = classifyContent(entry.name);
       const indexedAt = new Date().toISOString();
       const parentPath = entry.logicalPath.includes("/") ? entry.logicalPath.slice(0, entry.logicalPath.lastIndexOf("/")) : "";
       const textIndexed = entry.kind === "file" && classification.text && entry.sizeBytes <= MAX_INDEXED_TEXT_BYTES;
+      const previous = getIndexEntry(database, entry.logicalPath);
+      const contentUnchanged = previous?.kind === entry.kind
+        && previous.sizeBytes === entry.sizeBytes
+        && previous.modifiedAt === entry.modifiedAt
+        && previous.extension === classification.extension
+        && previous.mimeType === classification.mimeType
+        && previous.textIndexed === textIndexed;
       replaceIndexEntry(database, {
         logicalPath: entry.logicalPath, parentPath, name: entry.name, kind: entry.kind,
         sizeBytes: entry.sizeBytes, modifiedAt: entry.modifiedAt, extension: classification.extension,
         mimeType: classification.mimeType, textIndexed, generation, indexedAt,
       });
-      if (textIndexed) {
+      if (textIndexed && !contentUnchanged) {
+        await waitForFolderReadsToFinish();
         const text = (await storage.readFile(entry.logicalPath)).subarray(0, MAX_INDEXED_TEXT_BYTES).toString("utf8");
         replaceIndexText(database, entry.logicalPath, text);
       }

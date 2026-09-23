@@ -127,6 +127,57 @@ describe("indexer", () => {
     expect(searchFiles(database, { query: "folder-name", kind: "folder" }).items.map((item) => item.logicalPath)).toContain("folder-name");
   });
 
+  it("reuses indexed text when file metadata is unchanged", async () => {
+    await fs.writeFile(path.join(root, "note.txt"), "needle");
+    const base = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    let reads = 0;
+    const storage = { ...base, readFile: async (logicalPath: string) => { reads += 1; return base.readFile(logicalPath); } };
+
+    await runIndexMaintenance({ database, storage, maxEntries: 20 });
+    await runIndexMaintenance({ database, storage, maxEntries: 20 });
+
+    expect(reads).toBe(1);
+    expect(searchFiles(database, { query: "needle" }).items.map((item) => item.logicalPath)).toContain("note.txt");
+  });
+
+  it("rereads indexed text when file metadata changes", async () => {
+    await fs.writeFile(path.join(root, "note.txt"), "first");
+    const base = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    let reads = 0;
+    const storage = { ...base, readFile: async (logicalPath: string) => { reads += 1; return base.readFile(logicalPath); } };
+    await runIndexMaintenance({ database, storage, maxEntries: 20 });
+    await fs.writeFile(path.join(root, "note.txt"), "second value");
+
+    await runIndexMaintenance({ database, storage, maxEntries: 20 });
+
+    expect(reads).toBe(2);
+    expect(searchFiles(database, { query: "second" }).items.map((item) => item.logicalPath)).toContain("note.txt");
+  });
+
+  it("waits for an interactive folder read before reading file contents", async () => {
+    await fs.writeFile(path.join(root, "note.txt"), "needle");
+    const base = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    let releaseFolderRead!: () => void;
+    let reads = 0;
+    const storage = {
+      ...base,
+      list: async (logicalPath: string) => {
+        const result = await base.list(logicalPath);
+        releaseFolderRead = beginFolderRead();
+        return result;
+      },
+      readFile: async (logicalPath: string) => { reads += 1; return base.readFile(logicalPath); },
+    };
+
+    const indexing = runIndexMaintenance({ database, storage, maxEntries: 20 });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const readsWhileHeld = reads;
+    releaseFolderRead();
+    await expect(indexing).resolves.toMatchObject({ completed: true });
+    expect(readsWhileHeld).toBe(0);
+    expect(reads).toBe(1);
+  });
+
   it("removes stale FTS content when a text file becomes binary", async () => {
     const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });
     await fs.writeFile(path.join(root, "changing.txt"), "needle");

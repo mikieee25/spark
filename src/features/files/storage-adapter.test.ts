@@ -45,6 +45,15 @@ describe("storage adapter", () => {
     await expect(adapter.stat("Reports")).resolves.toEqual(expect.objectContaining({ kind: "folder", sizeBytes: 8 }));
   });
 
+  it("deduplicates concurrent cached listings for the same folder", async () => {
+    await fs.writeFile(path.join(root, "note.txt"), "note");
+    const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+
+    const [first, second] = await Promise.all([storage.list(""), storage.list("")]);
+
+    expect(first).toBe(second);
+  });
+
   it("rejects symlinks even when the lexical path is contained", async () => {
     const outside = path.join(data, "outside.txt");
     await fs.writeFile(outside, "private");

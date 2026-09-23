@@ -49,6 +49,7 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
   const root = path.resolve(config.filesRoot);
   const dataDirectory = path.resolve(config.dataDirectory);
   const listCache = createDirectoryListCache<StorageEntry[]>({ ttlMs: 3_000, maxEntries: 128 });
+  const inFlightLists = new Map<string, Promise<StorageEntry[]>>();
   function resolveLogical(logicalPath: string): string {
     const normalized = normalizeLogicalPath(logicalPath);
     const candidate = path.resolve(root, ...normalized ? normalized.split("/") : []);
@@ -138,34 +139,44 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
     return totals;
   }
 
+  async function loadDirectoryList(logicalPath: string, useCache: boolean): Promise<StorageEntry[]> {
+    const directory = await resolveExisting(logicalPath);
+    const directoryStat = await statAsync(directory);
+    if (!directoryStat.isDirectory()) throw new Error("NOT_A_DIRECTORY");
+    const fingerprint = String(directoryStat.mtimeMs);
+    const cached = useCache ? listCache.get(logicalPath, fingerprint) : undefined;
+    if (cached) return cached;
+    const entries = await readdir(directory, { withFileTypes: true });
+    const result = (await mapWithConcurrency(entries, LIST_METADATA_CONCURRENCY, async (entry) => {
+      if (!isSafeStorageName(entry.name)) return null;
+      const childPath = path.join(directory, entry.name);
+      if (entry.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
+      const childStat = await lstat(childPath);
+      if (childStat.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
+      if (!childStat.isFile() && !childStat.isDirectory()) return null;
+      const childLogical = normalizeLogicalPath(logicalPath ? `${logicalPath}/${entry.name}` : entry.name);
+      return {
+        name: entry.name,
+        logicalPath: childLogical,
+        kind: childStat.isDirectory() ? "folder" : "file",
+        sizeBytes: childStat.isFile() ? childStat.size : 0,
+        modifiedAt: childStat.mtime.toISOString(),
+      } satisfies StorageEntry;
+    })).filter((entry): entry is StorageEntry => entry !== null);
+    const sorted = result.sort((left, right) => Number(right.kind === "folder") - Number(left.kind === "folder") || left.name.localeCompare(right.name));
+    if (useCache) listCache.set(logicalPath, fingerprint, sorted);
+    return sorted;
+  }
+
   return {
     async list(logicalPath, options) {
-      const directory = await resolveExisting(logicalPath);
-      const directoryStat = await statAsync(directory);
-      if (!directoryStat.isDirectory()) throw new Error("NOT_A_DIRECTORY");
-      const fingerprint = String(directoryStat.mtimeMs);
-      const cached = options?.cache === false ? undefined : listCache.get(logicalPath, fingerprint);
-      if (cached) return cached;
-      const entries = await readdir(directory, { withFileTypes: true });
-      const result = (await mapWithConcurrency(entries, LIST_METADATA_CONCURRENCY, async (entry) => {
-        if (!isSafeStorageName(entry.name)) return null;
-        const childPath = path.join(directory, entry.name);
-        if (entry.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
-        const childStat = await lstat(childPath);
-        if (childStat.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
-        if (!childStat.isFile() && !childStat.isDirectory()) return null;
-        const childLogical = normalizeLogicalPath(logicalPath ? `${logicalPath}/${entry.name}` : entry.name);
-        return {
-          name: entry.name,
-          logicalPath: childLogical,
-          kind: childStat.isDirectory() ? "folder" : "file",
-          sizeBytes: childStat.isFile() ? childStat.size : 0,
-          modifiedAt: childStat.mtime.toISOString(),
-        } satisfies StorageEntry;
-      })).filter((entry): entry is StorageEntry => entry !== null);
-      const sorted = result.sort((left, right) => Number(right.kind === "folder") - Number(left.kind === "folder") || left.name.localeCompare(right.name));
-      if (options?.cache !== false) listCache.set(logicalPath, fingerprint, sorted);
-      return sorted;
+      const normalizedPath = normalizeLogicalPath(logicalPath);
+      if (options?.cache === false) return loadDirectoryList(normalizedPath, false);
+      const existing = inFlightLists.get(normalizedPath);
+      if (existing) return existing;
+      const pending = loadDirectoryList(normalizedPath, true).finally(() => inFlightLists.delete(normalizedPath));
+      inFlightLists.set(normalizedPath, pending);
+      return pending;
     },
     async stat(logicalPath) {
       const target = await resolveExisting(logicalPath);

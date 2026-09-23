@@ -7,6 +7,7 @@ import { runRecycleMaintenance } from "@/features/recycle/retention-service";
 import { runIndexMaintenance } from "@/features/discovery/indexer";
 import { getIndexState } from "@/features/discovery/discovery-repository";
 import { getRetentionDays } from "@/features/admin/settings-repository";
+import { waitForFolderReadQuietPeriod } from "@/features/discovery/folder-read-priority";
 
 let maintenanceStarted = false;
 let storageRuntime: Readonly<{ filesRoot: string; dataDirectory: string; storage: ReturnType<typeof createStorageAdapter> }> | null = null;
@@ -31,6 +32,7 @@ export function getFileService() {
 }
 
 async function continueIndexMaintenance(database: ReturnType<typeof getDatabase>, storage: ReturnType<typeof getFileStorage>): Promise<void> {
+  await waitForFolderReadQuietPeriod(2_000);
   for (;;) {
     try {
       const result = await runIndexMaintenance({ database, storage, maxEntries: 100 });
@@ -40,7 +42,7 @@ async function continueIndexMaintenance(database: ReturnType<typeof getDatabase>
         console.error("SPARK index maintenance failed", state.error);
         return;
       }
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      await waitForFolderReadQuietPeriod(250);
     } catch (error) {
       console.error("SPARK index maintenance failed", error);
       return;

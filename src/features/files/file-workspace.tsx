@@ -30,6 +30,13 @@ const AUTO_REFRESH_OPTIONS = [
   { value: 300, label: "5 minutes" },
 ] as const;
 const LARGE_FOLDER_PAGE_SIZE = 200;
+const FOLDER_CACHE_LIMIT = 64;
+
+function rememberFolder(cache: Map<string, FileEntry[]>, logicalPath: string, entries: FileEntry[]) {
+  cache.delete(logicalPath);
+  cache.set(logicalPath, entries);
+  while (cache.size > FOLDER_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+}
 
 function formatSize(size: number): string {
   if (!size) return "—";
@@ -88,6 +95,7 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
   const [folderProgress, setFolderProgress] = useState<{ completed: number; total: number; logicalPath: string } | null>(null);
   const [uploadingFile, setUploadingFile] = useState<string | null>(null);
   const [openingPath, setOpeningPath] = useState<string | null>(null);
+  const [folderLoading, setFolderLoading] = useState(false);
   const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(60);
   const [visibleEntryCount, setVisibleEntryCount] = useState(LARGE_FOLDER_PAGE_SIZE);
   const [folderConflict, setFolderConflict] = useState<FolderConflict | null>(null);
@@ -97,11 +105,15 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
   const searchController = useRef<AbortController>(null);
   const uploadController = useRef<AbortController>(null);
   const autoRefreshController = useRef<AbortController>(null);
+  const navigationController = useRef<AbortController>(null);
+  const navigationSequence = useRef(0);
+  const folderCache = useRef(new Map<string, FileEntry[]>([[initialPath, initialEntries]]));
 
   useEffect(() => () => {
     searchController.current?.abort();
     uploadController.current?.abort();
     autoRefreshController.current?.abort();
+    navigationController.current?.abort();
   }, []);
 
   useEffect(() => {
@@ -113,12 +125,15 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
   }, []);
 
   const refreshCurrentFolder = useCallback(async () => {
-    if (openingPath || folderProgress || uploadingFile || autoRefreshController.current) return;
+    if (openingPath !== null || folderProgress || uploadingFile || autoRefreshController.current) return;
     const controller = new AbortController();
     autoRefreshController.current = controller;
     try {
       const result = await listFiles(currentPath, controller.signal);
-      if (!controller.signal.aborted) setEntries(result.entries);
+      if (!controller.signal.aborted) {
+        rememberFolder(folderCache.current, result.path, result.entries);
+        setEntries(result.entries);
+      }
     } catch {
       // Preserve the current listing when a background refresh cannot complete.
     } finally {
@@ -161,19 +176,38 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
   }, []);
 
   async function navigateTo(logicalPath: string) {
-    if (openingPath) return;
+    autoRefreshController.current?.abort();
+    navigationController.current?.abort();
+    const controller = new AbortController();
+    const sequence = ++navigationSequence.current;
+    navigationController.current = controller;
+    const cached = folderCache.current.get(logicalPath);
     setError("");
     setOpeningPath(logicalPath);
+    setFolderLoading(!cached);
+    setCurrentPath(logicalPath);
+    setEntries(cached ?? []);
+    setVisibleEntryCount(LARGE_FOLDER_PAGE_SIZE);
+    setSearchState("idle");
+    setSelected(null);
     try {
-      const result = await listFiles(logicalPath);
+      const result = await listFiles(logicalPath, controller.signal);
+      if (controller.signal.aborted || sequence !== navigationSequence.current) return;
+      rememberFolder(folderCache.current, result.path, result.entries);
       setCurrentPath(result.path);
       setEntries(result.entries);
-      setVisibleEntryCount(LARGE_FOLDER_PAGE_SIZE);
-      setSearchState("idle");
-      setSelected(null);
       void refreshRecent();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to open folder"); }
-    finally { setOpeningPath(null); }
+    } catch (cause) {
+      if (!controller.signal.aborted && sequence === navigationSequence.current) {
+        setError(cause instanceof Error ? cause.message : "Unable to open folder");
+      }
+    } finally {
+      if (sequence === navigationSequence.current) {
+        setOpeningPath(null);
+        setFolderLoading(false);
+        navigationController.current = null;
+      }
+    }
   }
 
   async function openFolder(entry: Pick<FileEntry, "kind" | "logicalPath">) {
@@ -221,7 +255,7 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
     const name = folderName.trim();
     if (!name) return;
     const path = currentPath ? `${currentPath}/${name}` : name;
-    try { const result = await createFolder(path); setEntries((current) => [result.item, ...current]); setFolderName(""); setNewFolderOpen(false); setNotice(`${name} created.`); }
+    try { const result = await createFolder(path); setEntries((current) => { const next = [result.item, ...current]; rememberFolder(folderCache.current, currentPath, next); return next; }); setFolderName(""); setNewFolderOpen(false); setNotice(`${name} created.`); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to create folder"); }
   }
 
@@ -230,7 +264,7 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
     uploadController.current = controller;
     setUploadingFile(file.name);
     setError("");
-    try { await uploadFile({ directory: currentPath, file, signal: controller.signal }); const result = await listFiles(currentPath); setEntries(result.entries); setNotice(`${file.name} uploaded.`); }
+    try { await uploadFile({ directory: currentPath, file, signal: controller.signal }); const result = await listFiles(currentPath); rememberFolder(folderCache.current, currentPath, result.entries); setEntries(result.entries); setNotice(`${file.name} uploaded.`); }
     catch (cause) { setError(controller.signal.aborted || (cause instanceof DOMException && cause.name === "AbortError") ? "Upload cancelled." : cause instanceof Error ? cause.message : "Unable to upload file"); }
     finally { setUploadingFile(null); uploadController.current = null; }
   }
@@ -257,6 +291,7 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
     try {
       const result = await uploadFolder({ directory: currentPath, files, signal: controller.signal, onProgress: setFolderProgress, onConflict: askFolderConflict });
       const listing = await listFiles(currentPath);
+      rememberFolder(folderCache.current, currentPath, listing.entries);
       setEntries(listing.entries);
       setNotice(`Uploaded ${result.uploaded} of ${files.length} files${result.skipped ? `; skipped ${result.skipped}` : ""}.`);
     } catch (cause) {
@@ -274,23 +309,24 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
 
   async function submitDelete() {
     if (!selected) return;
-    try { await deleteFile(selected.logicalPath); setEntries((current) => current.filter((entry) => entry.logicalPath !== selected.logicalPath)); setFavorites((current) => current.filter((favorite) => favorite.logicalPath !== selected.logicalPath)); setSelected(null); setDeleteOpen(false); setNotice(`${selected.name} moved to Recycle bin.`); }
+    try { await deleteFile(selected.logicalPath); setEntries((current) => { const next = current.filter((entry) => entry.logicalPath !== selected.logicalPath); rememberFolder(folderCache.current, currentPath, next); return next; }); setFavorites((current) => current.filter((favorite) => favorite.logicalPath !== selected.logicalPath)); setSelected(null); setDeleteOpen(false); setNotice(`${selected.name} moved to Recycle bin.`); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to delete item"); }
   }
 
   async function submitRename(conflict?: "replace") {
     if (!selected || !renameName.trim()) return;
     const destination = currentPath ? `${currentPath}/${renameName.trim()}` : renameName.trim();
-    try { await moveFile({ source: selected.logicalPath, destination, conflict }); const result = await listFiles(currentPath); setEntries(result.entries); setRenameOpen(false); setConflictOpen(false); setSelected(null); setNotice(`${selected.name} renamed.`); }
+    try { await moveFile({ source: selected.logicalPath, destination, conflict }); const result = await listFiles(currentPath); rememberFolder(folderCache.current, currentPath, result.entries); setEntries(result.entries); setRenameOpen(false); setConflictOpen(false); setSelected(null); setNotice(`${selected.name} renamed.`); }
     catch (cause) { if (cause instanceof FileApiError && cause.status === 409) setConflictOpen(true); else setError(cause instanceof Error ? cause.message : "Unable to rename item"); }
   }
 
   const selectedIsFavorite = useMemo(() => Boolean(selected && favorites.some((favorite) => favorite.logicalPath === selected.logicalPath)), [favorites, selected]);
 
+  const isOpeningFolder = openingPath !== null;
   const visibleEntries = entries.slice(0, visibleEntryCount);
   return <div className="mx-auto flex max-w-[1500px] flex-col gap-6">
     <Breadcrumb><BreadcrumbList><BreadcrumbItem><BreadcrumbLink href="/files">Workspace</BreadcrumbLink></BreadcrumbItem><BreadcrumbSeparator /><BreadcrumbItem><BreadcrumbPage>{currentPath || "Shared files"}</BreadcrumbPage></BreadcrumbItem></BreadcrumbList></Breadcrumb>
-    <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">My workspace</p><h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Shared files</h1><p className="mt-2 max-w-2xl text-sm text-muted-foreground">A calm, searchable home for DOE records, working files, and shared knowledge.</p></div><div className="flex flex-wrap items-center gap-2"><Button variant="outline" onClick={() => setNewFolderOpen(true)} disabled={Boolean(folderProgress || uploadingFile || openingPath)}><Plus data-icon="inline-start" />New folder</Button><Button variant="outline" onClick={() => folderInput.current?.click()} disabled={Boolean(folderProgress || uploadingFile || openingPath)}><FolderUp data-icon="inline-start" />Upload folder</Button><Button onClick={() => fileInput.current?.click()} disabled={Boolean(folderProgress || uploadingFile || openingPath)}><Upload data-icon="inline-start" />Upload</Button><input ref={fileInput} type="file" className="sr-only" aria-label="File upload" onChange={(event) => { const file = event.target.files?.[0]; if (file) void submitUpload(file); event.target.value = ""; }} /><input ref={(element) => { folderInput.current = element; element?.setAttribute("webkitdirectory", ""); }} type="file" className="sr-only" aria-label="Folder upload" onChange={(event) => { void submitFolderUpload(Array.from(event.target.files ?? [])); event.target.value = ""; }} /></div></div>
+    <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">My workspace</p><h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Shared files</h1><p className="mt-2 max-w-2xl text-sm text-muted-foreground">A calm, searchable home for DOE records, working files, and shared knowledge.</p></div><div className="flex flex-wrap items-center gap-2"><Button variant="outline" onClick={() => setNewFolderOpen(true)} disabled={Boolean(folderProgress || uploadingFile || isOpeningFolder)}><Plus data-icon="inline-start" />New folder</Button><Button variant="outline" onClick={() => folderInput.current?.click()} disabled={Boolean(folderProgress || uploadingFile || isOpeningFolder)}><FolderUp data-icon="inline-start" />Upload folder</Button><Button onClick={() => fileInput.current?.click()} disabled={Boolean(folderProgress || uploadingFile || isOpeningFolder)}><Upload data-icon="inline-start" />Upload</Button><input ref={fileInput} type="file" className="sr-only" aria-label="File upload" onChange={(event) => { const file = event.target.files?.[0]; if (file) void submitUpload(file); event.target.value = ""; }} /><input ref={(element) => { folderInput.current = element; element?.setAttribute("webkitdirectory", ""); }} type="file" className="sr-only" aria-label="Folder upload" onChange={(event) => { void submitFolderUpload(Array.from(event.target.files ?? [])); event.target.value = ""; }} /></div></div>
     <SearchBar loading={searchState === "loading"} onSearch={submitSearch} onClear={() => { searchController.current?.abort(); setSearchState("idle"); setSearchQuery(""); }} />
     <section aria-label="Search results" aria-live="polite">
       {searchState === "loading" && <Card className="shadow-none"><CardContent className="grid gap-3 py-4 sm:grid-cols-3"><Skeleton className="h-14" /><Skeleton className="h-14" /><Skeleton className="h-14" /></CardContent></Card>}
@@ -298,10 +334,10 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
       {searchState === "success" && <Card className="shadow-none"><CardHeader><CardTitle className="text-base">Search results</CardTitle><CardDescription>{searchResult.items.length ? `${searchResult.items.length} matches in ${currentPath || "Shared files"}` : "No matches found"}</CardDescription></CardHeader>{searchResult.items.length > 0 && <CardContent><ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{searchResult.items.map((item) => <li key={item.logicalPath}><Button variant="ghost" className="h-auto w-full justify-start gap-3 border px-3 py-3 text-left" onClick={() => selectSearchResult(item)} aria-label={`Open search result ${item.name}`}><FileGlyph entry={item} /><span className="min-w-0"><span className="block truncate font-medium">{item.name}</span><span className="block truncate text-xs text-muted-foreground">{item.kind === "folder" ? "Folder" : "File"} · {item.logicalPath}</span></span></Button></li>)}</ul></CardContent>}</Card>}
     </section>
     {error && <div role="alert" className="flex items-center justify-between rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"><span>{error}</span><Button variant="ghost" size="icon-sm" onClick={() => setError("")} aria-label="Dismiss error"><X /></Button></div>}
-    {currentPath && <div><Button variant="outline" onClick={() => void goBack()} disabled={Boolean(openingPath)} aria-label="Go back"><ArrowLeft data-icon="inline-start" />Back to parent folder</Button></div>}
+    {currentPath && <div><Button variant="outline" onClick={() => void goBack()} aria-label="Go back"><ArrowLeft data-icon="inline-start" />Back to parent folder</Button></div>}
     <div className="grid gap-3 md:grid-cols-3"><Card className="shadow-none"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground">Current folder</p><p className="mt-1 truncate text-lg font-semibold">{currentPath || "Shared files"}</p></CardContent></Card><Card className="shadow-none"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground">Indexed results</p><p className="mt-1 text-lg font-semibold">{searchState === "success" ? searchResult.items.length : "—"}</p></CardContent></Card><Card className="shadow-none"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground">Files and folders</p><p className="mt-1 text-lg font-semibold">{entries.length}</p></CardContent></Card></div>
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <Card className="min-w-0 overflow-hidden shadow-none"><CardHeader className="gap-4 border-b bg-muted/20 px-4 py-4 sm:px-6"><div className="flex flex-wrap items-center justify-between gap-4"><div><CardTitle className="text-base">{currentPath || "My workspace"}</CardTitle><CardDescription className="mt-1">{entries.length} items{entries.length > visibleEntries.length ? ` · showing ${visibleEntries.length}` : ""}</CardDescription></div><div className="flex flex-wrap items-center justify-end gap-3">{openingPath && <span role="status" aria-label="Opening folder" aria-live="polite" className="inline-flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />Opening folder…</span>}<label className="flex items-center gap-2 text-xs text-muted-foreground">Auto-refresh<select aria-label="Auto-refresh interval" className="h-8 rounded-md border bg-background px-2 text-foreground" value={autoRefreshSeconds} onChange={(event) => changeAutoRefresh(Number(event.target.value))}>{AUTO_REFRESH_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><div className="flex rounded-lg border bg-background p-0.5"><Button variant={viewMode === "list" ? "secondary" : "ghost"} size="icon-sm" aria-label="List view" onClick={() => setViewMode("list")} disabled={Boolean(openingPath)}><LayoutList /></Button><Button variant={viewMode === "grid" ? "secondary" : "ghost"} size="icon-sm" aria-label="Grid view" onClick={() => setViewMode("grid")} disabled={Boolean(openingPath)}><Grid2X2 /></Button></div></div></div></CardHeader><CardContent className="p-0">{entries.length === 0 ? <div className="flex min-h-72 flex-col items-center justify-center gap-3 p-8 text-center"><Folder className="size-8 text-muted-foreground" /><h2 className="font-semibold">This folder is empty</h2><p className="text-sm text-muted-foreground">Create a folder or upload a file to begin.</p></div> : viewMode === "list" ? <div role="table" aria-label="Workspace files"><div role="row" className="hidden grid-cols-[minmax(17rem,1.6fr)_minmax(8rem,0.6fr)_minmax(10rem,0.8fr)_auto] gap-4 border-b px-6 py-3 text-xs font-medium text-muted-foreground md:grid"><span role="columnheader">Name</span><span role="columnheader">Size</span><span role="columnheader">Modified</span><span role="columnheader" /></div>{visibleEntries.map((entry) => <div key={entry.logicalPath} role="row" className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b px-4 py-3.5 last:border-0 md:grid-cols-[minmax(17rem,1.6fr)_minmax(8rem,0.6fr)_minmax(10rem,0.8fr)_auto] md:px-6"><button type="button" className="flex min-w-0 items-center gap-3 rounded-lg text-left focus-visible:ring-2 focus-visible:ring-ring" onClick={() => void openFolder(entry)} aria-label={entry.name} disabled={Boolean(openingPath)}><FileGlyph entry={entry} /><span className="min-w-0"><span className="block truncate font-medium">{entry.name}</span><span className="block text-xs text-muted-foreground">{entry.kind === "folder" ? "Folder" : "File"}</span></span></button><span className="hidden text-sm text-muted-foreground md:block">{formatSize(entry.sizeBytes)}</span><span className="hidden text-sm text-muted-foreground md:block"><time dateTime={entry.modifiedAt}>{formatDate(entry.modifiedAt)}</time></span><Button variant="ghost" size="icon-sm" aria-label={`Actions for ${entry.name}`} onClick={() => setSelected(entry)} disabled={Boolean(openingPath)}>⋯</Button></div>)}</div> : <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">{visibleEntries.map((entry) => <button type="button" key={entry.logicalPath} onClick={() => void openFolder(entry)} className="rounded-xl border p-4 text-left transition hover:border-primary focus-visible:ring-2 focus-visible:ring-ring" disabled={Boolean(openingPath)}><FileGlyph entry={entry} /><p className="mt-4 truncate font-medium">{entry.name}</p><p className="mt-1 text-xs text-muted-foreground">{entry.kind === "folder" ? "Folder" : formatSize(entry.sizeBytes)}</p></button>)}</div>}{entries.length > visibleEntries.length && <div className="flex justify-center border-t p-4"><Button variant="outline" onClick={() => setVisibleEntryCount((count) => Math.min(entries.length, count + LARGE_FOLDER_PAGE_SIZE))}>Load more</Button></div>}</CardContent></Card>
+      <Card className="min-w-0 overflow-hidden shadow-none"><CardHeader className="gap-4 border-b bg-muted/20 px-4 py-4 sm:px-6"><div className="flex flex-wrap items-center justify-between gap-4"><div><CardTitle className="text-base">{currentPath || "My workspace"}</CardTitle><CardDescription className="mt-1">{entries.length} items{entries.length > visibleEntries.length ? ` · showing ${visibleEntries.length}` : ""}</CardDescription></div><div className="flex flex-wrap items-center justify-end gap-3">{isOpeningFolder && <span role="status" aria-label="Opening folder" aria-live="polite" className="inline-flex items-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />Opening folder…</span>}<label className="flex items-center gap-2 text-xs text-muted-foreground">Auto-refresh<select aria-label="Auto-refresh interval" className="h-8 rounded-md border bg-background px-2 text-foreground" value={autoRefreshSeconds} onChange={(event) => changeAutoRefresh(Number(event.target.value))}>{AUTO_REFRESH_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><div className="flex rounded-lg border bg-background p-0.5"><Button variant={viewMode === "list" ? "secondary" : "ghost"} size="icon-sm" aria-label="List view" onClick={() => setViewMode("list")}><LayoutList /></Button><Button variant={viewMode === "grid" ? "secondary" : "ghost"} size="icon-sm" aria-label="Grid view" onClick={() => setViewMode("grid")}><Grid2X2 /></Button></div></div></div></CardHeader><CardContent className="p-0">{folderLoading ? <div role="status" aria-label="Loading folder contents" className="grid min-h-72 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3"><Skeleton className="h-20" /><Skeleton className="h-20" /><Skeleton className="h-20" /></div> : entries.length === 0 ? <div className="flex min-h-72 flex-col items-center justify-center gap-3 p-8 text-center"><Folder className="size-8 text-muted-foreground" /><h2 className="font-semibold">This folder is empty</h2><p className="text-sm text-muted-foreground">Create a folder or upload a file to begin.</p></div> : viewMode === "list" ? <div role="table" aria-label="Workspace files"><div role="row" className="hidden grid-cols-[minmax(17rem,1.6fr)_minmax(8rem,0.6fr)_minmax(10rem,0.8fr)_auto] gap-4 border-b px-6 py-3 text-xs font-medium text-muted-foreground md:grid"><span role="columnheader">Name</span><span role="columnheader">Size</span><span role="columnheader">Modified</span><span role="columnheader" /></div>{visibleEntries.map((entry) => <div key={entry.logicalPath} role="row" className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b px-4 py-3.5 last:border-0 md:grid-cols-[minmax(17rem,1.6fr)_minmax(8rem,0.6fr)_minmax(10rem,0.8fr)_auto] md:px-6"><button type="button" className="flex min-w-0 items-center gap-3 rounded-lg text-left focus-visible:ring-2 focus-visible:ring-ring" onClick={() => void openFolder(entry)} aria-label={entry.name}><FileGlyph entry={entry} /><span className="min-w-0"><span className="block truncate font-medium">{entry.name}</span><span className="block text-xs text-muted-foreground">{entry.kind === "folder" ? "Folder" : "File"}</span></span></button><span className="hidden text-sm text-muted-foreground md:block">{formatSize(entry.sizeBytes)}</span><span className="hidden text-sm text-muted-foreground md:block"><time dateTime={entry.modifiedAt}>{formatDate(entry.modifiedAt)}</time></span><Button variant="ghost" size="icon-sm" aria-label={`Actions for ${entry.name}`} onClick={() => setSelected(entry)}>⋯</Button></div>)}</div> : <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">{visibleEntries.map((entry) => <button type="button" key={entry.logicalPath} onClick={() => void openFolder(entry)} className="rounded-xl border p-4 text-left transition hover:border-primary focus-visible:ring-2 focus-visible:ring-ring"><FileGlyph entry={entry} /><p className="mt-4 truncate font-medium">{entry.name}</p><p className="mt-1 text-xs text-muted-foreground">{entry.kind === "folder" ? "Folder" : formatSize(entry.sizeBytes)}</p></button>)}</div>}{entries.length > visibleEntries.length && <div className="flex justify-center border-t p-4"><Button variant="outline" onClick={() => setVisibleEntryCount((count) => Math.min(entries.length, count + LARGE_FOLDER_PAGE_SIZE))}>Load more</Button></div>}</CardContent></Card>
       <aside aria-label="Discovery shortcuts" className="grid content-start gap-4 sm:grid-cols-2 lg:grid-cols-1"><DiscoveryList title="Favorites" icon={Star} items={favorites} empty="Favorite important files and folders for quick access." onSelect={selectPath} /><DiscoveryList title="Recent items" icon={Clock3} items={recent} empty="Files and folders you open will appear here." onSelect={selectPath} /></aside>
     </div>
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed bg-muted/20 px-4 py-3 text-xs text-muted-foreground"><span>Local-first workspace · OneDrive sync stays external to SPARK</span><span className="flex items-center gap-3" aria-live="polite">{folderProgress ? `Uploading ${folderProgress.completed} of ${folderProgress.total}: ${baseName(folderProgress.logicalPath)}` : uploadingFile ? `Uploading ${uploadingFile}…` : notice}{(folderProgress || uploadingFile) && <Button variant="outline" size="sm" onClick={cancelUpload}>Cancel upload</Button>}</span></div>
