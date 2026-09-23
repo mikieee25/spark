@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, Clock3, File, Folder, FolderUp, Grid2X2, LayoutList, LoaderCircle, Plus, Star, Trash2, Upload, X } from "lucide-react";
+import { ArrowDownToLine, ArrowLeft, Clock3, File, Folder, FolderUp, Grid2X2, LayoutList, LoaderCircle, Plus, Star, Trash2, Upload, X } from "lucide-react";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +43,10 @@ function formatDate(value: string): string {
 
 function baseName(logicalPath: string): string {
   return logicalPath.split("/").at(-1) ?? logicalPath;
+}
+
+function parentPath(logicalPath: string): string {
+  return logicalPath.split("/").slice(0, -1).join("/");
 }
 
 function FileGlyph({ entry }: { entry: Pick<FileEntry, "kind"> }) {
@@ -148,13 +152,12 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
     try { setRecent(await listRecent()); } catch { /* Preserve the existing list if a refresh fails. */ }
   }, []);
 
-  async function openFolder(entry: Pick<FileEntry, "kind" | "logicalPath">) {
-    if (entry.kind !== "folder") { setSelected(entry as SelectedItem); return; }
+  async function navigateTo(logicalPath: string) {
     if (openingPath) return;
     setError("");
-    setOpeningPath(entry.logicalPath);
+    setOpeningPath(logicalPath);
     try {
-      const result = await listFiles(entry.logicalPath);
+      const result = await listFiles(logicalPath);
       setCurrentPath(result.path);
       setEntries(result.entries);
       setSearchState("idle");
@@ -162,6 +165,15 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
       void refreshRecent();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to open folder"); }
     finally { setOpeningPath(null); }
+  }
+
+  async function openFolder(entry: Pick<FileEntry, "kind" | "logicalPath">) {
+    if (entry.kind !== "folder") { setSelected(entry as SelectedItem); return; }
+    await navigateTo(entry.logicalPath);
+  }
+
+  async function goBack() {
+    if (currentPath) await navigateTo(parentPath(currentPath));
   }
 
   async function selectPath(logicalPath: string) {
@@ -266,7 +278,7 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
   const selectedIsFavorite = useMemo(() => Boolean(selected && favorites.some((favorite) => favorite.logicalPath === selected.logicalPath)), [favorites, selected]);
 
   return <div className="mx-auto flex max-w-[1500px] flex-col gap-6">
-    <Breadcrumb><BreadcrumbList><BreadcrumbItem><BreadcrumbLink href="/files">Workspace</BreadcrumbLink></BreadcrumbItem><BreadcrumbSeparator /><BreadcrumbItem><BreadcrumbPage>{currentPath || "Shared files"}</BreadcrumbPage></BreadcrumbItem></BreadcrumbList></Breadcrumb>
+    <div className="flex items-center gap-2"><Button variant="ghost" size="sm" onClick={() => void goBack()} disabled={!currentPath || Boolean(openingPath)} aria-label="Go back"><ArrowLeft data-icon="inline-start" />Back</Button><Breadcrumb><BreadcrumbList><BreadcrumbItem><BreadcrumbLink href="/files">Workspace</BreadcrumbLink></BreadcrumbItem><BreadcrumbSeparator /><BreadcrumbItem><BreadcrumbPage>{currentPath || "Shared files"}</BreadcrumbPage></BreadcrumbItem></BreadcrumbList></Breadcrumb></div>
     <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">My workspace</p><h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Shared files</h1><p className="mt-2 max-w-2xl text-sm text-muted-foreground">A calm, searchable home for DOE records, working files, and shared knowledge.</p></div><div className="flex flex-wrap items-center gap-2"><Button variant="outline" onClick={() => setNewFolderOpen(true)} disabled={Boolean(folderProgress || uploadingFile || openingPath)}><Plus data-icon="inline-start" />New folder</Button><Button variant="outline" onClick={() => folderInput.current?.click()} disabled={Boolean(folderProgress || uploadingFile || openingPath)}><FolderUp data-icon="inline-start" />Upload folder</Button><Button onClick={() => fileInput.current?.click()} disabled={Boolean(folderProgress || uploadingFile || openingPath)}><Upload data-icon="inline-start" />Upload</Button><input ref={fileInput} type="file" className="sr-only" aria-label="File upload" onChange={(event) => { const file = event.target.files?.[0]; if (file) void submitUpload(file); event.target.value = ""; }} /><input ref={(element) => { folderInput.current = element; element?.setAttribute("webkitdirectory", ""); }} type="file" className="sr-only" aria-label="Folder upload" onChange={(event) => { void submitFolderUpload(Array.from(event.target.files ?? [])); event.target.value = ""; }} /></div></div>
     <SearchBar loading={searchState === "loading"} onSearch={performSearch} onClear={() => { searchController.current?.abort(); setSearchState("idle"); setSearchQuery(""); }} />
     <section aria-label="Search results" aria-live="polite">

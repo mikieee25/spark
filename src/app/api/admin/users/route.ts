@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/features/auth/request-auth";
 import { hasValidMutationOrigin } from "@/features/auth/origin";
-import { createUser, listUsers, resetUserPassword, setUserDisabled } from "@/features/admin/admin-user-service";
+import { createUser, listUsers, resetUserPassword, setUserDisabled, setUserRole } from "@/features/admin/admin-user-service";
 import { getDatabase } from "@/lib/db/runtime";
 
 export const runtime = "nodejs";
@@ -23,7 +23,7 @@ export async function PATCH(request: Request): Promise<Response> {
   if (!hasValidMutationOrigin(request)) return NextResponse.json({ error: "INVALID_ORIGIN" }, { status: 403, headers });
   const user = await admin(); if (!user) return NextResponse.json({ error: "ADMIN_REQUIRED" }, { status: 403, headers });
   let body: unknown; try { body = await request.json(); } catch { return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400, headers }); }
-  const parsed = z.object({ userId: z.string().uuid(), disabled: z.boolean().optional(), temporaryPassword: z.string().min(12).max(128).optional() }).refine((value) => value.temporaryPassword !== undefined || value.disabled !== undefined).safeParse(body); if (!parsed.success) return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400, headers });
-  try { if (parsed.data.temporaryPassword) await resetUserPassword(getDatabase(), user, parsed.data.userId, parsed.data.temporaryPassword); else await setUserDisabled(getDatabase(), user, parsed.data.userId, parsed.data.disabled!); return NextResponse.json({ ok: true }, { headers }); } catch (error) { return errorResponse(error); }
+  const parsed = z.object({ userId: z.string().uuid(), disabled: z.boolean().optional(), temporaryPassword: z.string().min(12).max(128).optional(), role: z.enum(["user", "admin"]).optional() }).refine((value) => [value.temporaryPassword !== undefined, value.disabled !== undefined, value.role !== undefined].filter(Boolean).length === 1).safeParse(body); if (!parsed.success) return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400, headers });
+  try { if (parsed.data.temporaryPassword !== undefined) await resetUserPassword(getDatabase(), user, parsed.data.userId, parsed.data.temporaryPassword); else if (parsed.data.role !== undefined) setUserRole(getDatabase(), user, parsed.data.userId, parsed.data.role); else await setUserDisabled(getDatabase(), user, parsed.data.userId, parsed.data.disabled!); return NextResponse.json({ ok: true }, { headers }); } catch (error) { return errorResponse(error); }
 }
 export async function DELETE(): Promise<Response> { return NextResponse.json({ error: "ACCOUNT_DELETE_DISABLED" }, { status: 405, headers }); }

@@ -77,6 +77,14 @@ describe("FileWorkspace", () => {
     expect(screen.getByText("This folder is empty")).toBeInTheDocument();
   });
 
+  it("navigates to the parent folder with the back button", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ path: "Reports", entries: [entries[0]] }), { status: 200 }));
+    render(<FileWorkspace initialPath="Reports/2026" initialEntries={entries} />);
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+    expect(await screen.findByText("Reports")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith("/api/files?path=Reports", expect.anything());
+  });
+
   it("refreshes the current folder at the selected interval", async () => {
     vi.useFakeTimers();
     try {

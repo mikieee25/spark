@@ -50,6 +50,21 @@ export async function setUserDisabled(database: Database.Database, actor: AdminA
   })();
 }
 
+export function setUserRole(database: Database.Database, actor: AdminActor, userId: string, role: "user" | "admin", now = new Date()): void {
+  requireAdmin(actor);
+  const target = database.prepare("SELECT id, role, disabled_at FROM users WHERE id = ?").get(userId) as { id: string; role: "user" | "admin"; disabled_at: string | null } | undefined;
+  if (!target) throw new Error("USER_NOT_FOUND");
+  if (target.role === role) return;
+  if (target.role === "admin" && role === "user" && !target.disabled_at) {
+    const activeAdmins = database.prepare("SELECT count(*) count FROM users WHERE role = 'admin' AND disabled_at IS NULL").get() as { count: number };
+    if (activeAdmins.count <= 1) throw new Error("LAST_ADMIN");
+  }
+  database.transaction(() => {
+    database.prepare("UPDATE users SET role = ?, updated_at = ? WHERE id = ?").run(role, now.toISOString(), userId);
+    recordActivity(database, { actorUserId: actor.id, actorType: "user", action: "account_role_changed", paths: [], outcome: "success", occurredAt: now, metadata: { userId, from: target.role, to: role } });
+  })();
+}
+
 export async function resetUserPassword(database: Database.Database, actor: AdminActor, userId: string, temporaryPassword: string, now = new Date()): Promise<void> {
   requireAdmin(actor); const passwordHash = await hashPassword(temporaryPassword);
   database.transaction(() => {

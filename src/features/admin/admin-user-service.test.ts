@@ -8,7 +8,7 @@ import { openDatabase } from "@/lib/db/database";
 import { migrate } from "@/lib/db/migrations";
 import { createAdministrator } from "@/features/auth/admin-service";
 import { createSession, resolveSession } from "@/features/auth/session-repository";
-import { createUser, listUsers, resetUserPassword, setUserDisabled } from "./admin-user-service";
+import { createUser, listUsers, resetUserPassword, setUserDisabled, setUserRole } from "./admin-user-service";
 
 let db: Database.Database;
 let root: string;
@@ -45,5 +45,14 @@ describe("admin user service", () => {
     await resetUserPassword(db, actor(), user.id, "temporary-password");
     expect(db.prepare("SELECT must_change_password, password_hash FROM users WHERE id = ?").get(user.id)).toMatchObject({ must_change_password: 1 });
     expect(db.prepare("SELECT password_hash FROM users WHERE id = ?").get(user.id)).not.toEqual({ password_hash: "temporary-password" });
+  });
+  it("changes roles while preserving one active administrator", async () => {
+    const user = await createUser(db, actor(), { username: "alex", displayName: "Alex", password: "correct-password" });
+    await setUserRole(db, actor(), user.id, "admin");
+    expect(listUsers(db).find((item) => item.id === user.id)).toMatchObject({ role: "admin" });
+    await setUserRole(db, actor(), user.id, "user");
+    expect(listUsers(db).find((item) => item.id === user.id)).toMatchObject({ role: "user" });
+    expect(() => setUserRole(db, actor(), admin.id, "user")).toThrow("LAST_ADMIN");
+    expect(() => setUserRole(db, { id: "user-1", role: "user" }, user.id, "admin")).toThrow("ADMIN_REQUIRED");
   });
 });
