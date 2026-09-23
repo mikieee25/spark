@@ -15,7 +15,7 @@ describe("AppShell", () => {
     expect(screen.getByLabelText("Sidebar")).toBeInTheDocument();
     expect(screen.getByLabelText("Header")).toBeInTheDocument();
     expect(screen.getByLabelText("Content")).toHaveTextContent("Workspace");
-    expect(screen.getAllByRole("img", { name: "SPARK icon" })).toHaveLength(2);
+    expect(screen.getAllByRole("img", { name: "SPARK icon" })).toHaveLength(1);
     expect(screen.getByRole("img", { name: "Department of Energy seal" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
     expect(within(screen.getByLabelText("Sidebar")).queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
