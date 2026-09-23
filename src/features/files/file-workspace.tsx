@@ -20,7 +20,7 @@ type ViewMode = "list" | "grid";
 type SelectedItem = FileEntry & { mimeType?: string };
 type SearchState = "idle" | "loading" | "success" | "error";
 type FolderConflict = Readonly<{ file: File; logicalPath: string }>;
-type Props = Readonly<{ initialPath: string; initialEntries: FileEntry[]; initialFavorites?: Favorite[]; initialRecent?: RecentItem[] }>;
+type Props = Readonly<{ initialPath: string; initialEntries: FileEntry[] | null; initialFavorites?: Favorite[]; initialRecent?: RecentItem[] }>;
 const AUTO_REFRESH_STORAGE_KEY = "spark-auto-refresh-seconds";
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 const AUTO_REFRESH_OPTIONS = [
@@ -76,7 +76,7 @@ function DiscoveryList({ title, icon: Icon, items, empty, onSelect }: Readonly<{
 
 export function FileWorkspace({ initialPath, initialEntries, initialFavorites = [], initialRecent = [] }: Props) {
   const [currentPath, setCurrentPath] = useState(initialPath);
-  const [entries, setEntries] = useState(initialEntries);
+  const [entries, setEntries] = useState(initialEntries ?? []);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selected, setSelected] = useState<SelectedItem | null>(null);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
@@ -96,7 +96,7 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
   const [folderProgress, setFolderProgress] = useState<{ completed: number; total: number; logicalPath: string } | null>(null);
   const [uploadingFile, setUploadingFile] = useState<string | null>(null);
   const [openingPath, setOpeningPath] = useState<string | null>(null);
-  const [folderLoading, setFolderLoading] = useState(false);
+  const [folderLoading, setFolderLoading] = useState(initialEntries === null);
   const [autoRefreshSeconds, setAutoRefreshSeconds] = useState(60);
   const [visibleEntryCount, setVisibleEntryCount] = useState(LARGE_FOLDER_PAGE_SIZE);
   const [folderConflict, setFolderConflict] = useState<FolderConflict | null>(null);
@@ -108,7 +108,7 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
   const autoRefreshController = useRef<AbortController>(null);
   const navigationController = useRef<AbortController>(null);
   const navigationSequence = useRef(0);
-  const folderCache = useRef(new Map<string, FileEntry[]>([[initialPath, initialEntries]]));
+  const folderCache = useRef(new Map<string, FileEntry[]>(initialEntries ? [[initialPath, initialEntries]] : []));
 
   useEffect(() => () => {
     searchController.current?.abort();
@@ -124,6 +124,29 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (initialEntries !== null) return;
+    const controller = new AbortController();
+    const sequence = ++navigationSequence.current;
+    navigationController.current = controller;
+    void listFiles(initialPath, controller.signal).then((result) => {
+      if (controller.signal.aborted || sequence !== navigationSequence.current) return;
+      rememberFolder(folderCache.current, result.path, result.entries);
+      setCurrentPath(result.path);
+      setEntries(result.entries);
+      setError("");
+    }).catch((cause) => {
+      if (!controller.signal.aborted && sequence === navigationSequence.current) setError(cause instanceof Error ? cause.message : "Unable to open folder");
+    }).finally(() => {
+      if (sequence === navigationSequence.current) {
+        setOpeningPath(null);
+        setFolderLoading(false);
+        navigationController.current = null;
+      }
+    });
+    return () => controller.abort();
+  }, [initialEntries, initialPath]);
 
   const refreshCurrentFolder = useCallback(async () => {
     if (openingPath !== null || folderProgress || uploadingFile || autoRefreshController.current) return;
@@ -334,7 +357,7 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
       {searchState === "error" && <Card className="border-destructive/30 shadow-none"><CardContent className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium text-destructive">Search is unavailable right now.</p><p className="text-sm text-muted-foreground">Your current folder remains available.</p></div><Button variant="outline" onClick={() => void performSearch(searchQuery, searchKind)} aria-label="Retry search">Retry</Button></CardContent></Card>}
       {searchState === "success" && <Card className="shadow-none"><CardHeader><CardTitle className="text-base">Search results</CardTitle><CardDescription>{searchResult.items.length ? `${searchResult.items.length} matches in ${currentPath || "Shared files"}` : "No matches found"}</CardDescription></CardHeader>{searchResult.items.length > 0 && <CardContent><ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{searchResult.items.map((item) => <li key={item.logicalPath}><Button variant="ghost" className="h-auto w-full justify-start gap-3 border px-3 py-3 text-left" onClick={() => selectSearchResult(item)} aria-label={`Open search result ${item.name}`}><FileGlyph entry={item} /><span className="min-w-0"><span className="block truncate font-medium">{item.name}</span><span className="block truncate text-xs text-muted-foreground">{item.kind === "folder" ? "Folder" : "File"} · {item.logicalPath}</span></span></Button></li>)}</ul></CardContent>}</Card>}
     </section>
-    {error && <div role="alert" className="flex items-center justify-between rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"><span>{error}</span><Button variant="ghost" size="icon-sm" onClick={() => setError("")} aria-label="Dismiss error"><X /></Button></div>}
+    {error && <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"><span>{error}</span><span className="flex items-center gap-2"><Button variant="outline" size="sm" onClick={() => void navigateTo(currentPath)} aria-label="Retry folder">Retry</Button><Button variant="ghost" size="icon-sm" onClick={() => setError("")} aria-label="Dismiss error"><X /></Button></span></div>}
     {currentPath && <div><Button variant="outline" onClick={() => void goBack()} aria-label="Go back"><ArrowLeft data-icon="inline-start" />Back to parent folder</Button></div>}
     <div className="grid gap-3 md:grid-cols-3"><Card className="shadow-none"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground">Current folder</p><p className="mt-1 truncate text-lg font-semibold">{currentPath || "Shared files"}</p></CardContent></Card><Card className="shadow-none"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground">Indexed results</p><p className="mt-1 text-lg font-semibold">{searchState === "success" ? searchResult.items.length : "—"}</p></CardContent></Card><Card className="shadow-none"><CardContent className="p-4"><p className="text-xs font-medium text-muted-foreground">Files and folders</p><p className="mt-1 text-lg font-semibold">{entries.length}</p></CardContent></Card></div>
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">

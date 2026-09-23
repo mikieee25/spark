@@ -54,6 +54,31 @@ describe("storage adapter", () => {
     expect(first).toBe(second);
   });
 
+  it("reports listing phases without exposing filesystem paths", async () => {
+    await fs.writeFile(path.join(root, "note.txt"), "note");
+    const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    let timing: Record<string, unknown> | undefined;
+
+    await storage.list("", { cache: false, onTiming: (value) => { timing = value as Record<string, unknown>; } });
+
+    expect(timing).toEqual(expect.objectContaining({ cache: "bypass", entryCount: 1 }));
+    for (const key of ["pathValidationMs", "directoryStatMs", "readdirMs", "metadataMs", "sortMs"]) {
+      expect(timing?.[key]).toEqual(expect.any(Number));
+    }
+  });
+
+  it("reports cache misses and hits without repeating child metadata work", async () => {
+    await fs.writeFile(path.join(root, "note.txt"), "note");
+    const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    const timings: Array<Record<string, unknown>> = [];
+
+    await storage.list("", { onTiming: (value) => timings.push(value as Record<string, unknown>) });
+    await storage.list("", { onTiming: (value) => timings.push(value as Record<string, unknown>) });
+
+    expect(timings.map((value) => value.cache)).toEqual(["miss", "hit"]);
+    expect(timings[1]).toEqual(expect.objectContaining({ readdirMs: 0, metadataMs: 0, sortMs: 0, entryCount: 1 }));
+  });
+
   it("rejects symlinks even when the lexical path is contained", async () => {
     const outside = path.join(data, "outside.txt");
     await fs.writeFile(outside, "private");

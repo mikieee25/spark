@@ -93,6 +93,26 @@ describe("FileWorkspace", () => {
     expect(screen.getByText("This folder is empty")).toBeInTheDocument();
   });
 
+  it("loads the initial folder after mounting when the server did not provide entries", async () => {
+    let resolveListing!: (value: Response) => void;
+    vi.mocked(fetch).mockImplementationOnce(() => new Promise((resolve) => { resolveListing = resolve; }));
+    render(<FileWorkspace initialPath="" initialEntries={null} />);
+    expect(screen.getByRole("status", { name: "Loading folder contents" })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith("/api/files?path=", expect.anything());
+    resolveListing(new Response(JSON.stringify({ path: "", entries }), { status: 200 }));
+    expect(await screen.findByText("Q3 Energy Outlook.pdf")).toBeInTheDocument();
+  });
+
+  it("offers a retry when the initial folder request fails", async () => {
+    vi.mocked(fetch)
+      .mockRejectedValueOnce(new Error("NETWORK_DOWN"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ path: "", entries }), { status: 200 }));
+    render(<FileWorkspace initialPath="" initialEntries={null} />);
+    expect(await screen.findByText("NETWORK_DOWN")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry folder" }));
+    expect(await screen.findByText("Q3 Energy Outlook.pdf")).toBeInTheDocument();
+  });
+
   it("ignores an older folder response after navigating back", async () => {
     let resolveReports!: (value: Response) => void;
     vi.mocked(fetch)

@@ -33,12 +33,17 @@ describe("file routes", () => {
   it("returns a bounded listing for the current user", async () => {
     mocks.user.mockResolvedValue({ id: "user-1", role: "user" });
     mocks.database.mockReturnValue({});
-    mocks.service.mockReturnValue({ list: vi.fn().mockResolvedValue([{ name: "note.txt", kind: "file" }]) });
+    const list = vi.fn().mockImplementation(async (_path: string, options?: { onTiming?: (timing: Record<string, unknown>) => void }) => {
+      options?.onTiming?.({ pathValidationMs: 1, directoryStatMs: 2, cache: "miss", readdirMs: 3, metadataMs: 4, sortMs: 5, entryCount: 1 });
+      return [{ name: "note.txt", kind: "file" }];
+    });
+    mocks.service.mockReturnValue({ list });
     const response = await GET(new Request("http://spark.test/api/files?path=Reports"));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ path: "Reports", entries: [{ name: "note.txt", kind: "file" }] });
     expect(response.headers.get("cache-control")).toBe("private, no-store");
-    expect(response.headers.get("server-timing")).toMatch(/^auth;dur=\d+(?:\.\d+)?, list;dur=\d+(?:\.\d+)?, recent;dur=\d+(?:\.\d+)?, total;dur=\d+(?:\.\d+)?$/);
+    expect(response.headers.get("server-timing")).toMatch(/^auth;dur=\d+(?:\.\d+)?, path;dur=1\.0, directory;dur=2\.0, readdir;dur=3\.0, metadata;dur=4\.0, sort;dur=5\.0, list;dur=\d+(?:\.\d+)?, recent;dur=\d+(?:\.\d+)?, total;dur=\d+(?:\.\d+)?$/);
+    expect(list).toHaveBeenCalledWith("Reports", expect.objectContaining({ onTiming: expect.any(Function) }));
     expect(mocks.recent).toHaveBeenCalledWith({}, "user-1", "Reports");
   });
 

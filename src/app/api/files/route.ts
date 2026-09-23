@@ -32,14 +32,16 @@ export async function GET(request: Request): Promise<Response> {
   if (!parsed.success) return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400, headers: noStore });
   try {
     const listStartedAt = performance.now();
-    const entries = await getFileService().list(parsed.data);
+    let listTiming: { pathValidationMs: number; directoryStatMs: number; cache: "hit" | "miss" | "bypass"; readdirMs: number; metadataMs: number; sortMs: number; entryCount: number } | undefined;
+    const entries = await getFileService().list(parsed.data, { onTiming: (timing) => { listTiming = timing; } });
     const listMs = performance.now() - listStartedAt;
     const recentStartedAt = performance.now();
     if (access.user) addRecentItem(getDatabase(), access.user.id, parsed.data);
     else recordActivity(getDatabase(), { actorType: "anonymous", action: "browse", paths: [parsed.data], outcome: "success" });
     const recentMs = performance.now() - recentStartedAt;
     const totalMs = performance.now() - startedAt;
-    const serverTiming = `auth;dur=${authMs.toFixed(1)}, list;dur=${listMs.toFixed(1)}, recent;dur=${recentMs.toFixed(1)}, total;dur=${totalMs.toFixed(1)}`;
+    const phaseTiming = listTiming ? `path;dur=${listTiming.pathValidationMs.toFixed(1)}, directory;dur=${listTiming.directoryStatMs.toFixed(1)}, readdir;dur=${listTiming.readdirMs.toFixed(1)}, metadata;dur=${listTiming.metadataMs.toFixed(1)}, sort;dur=${listTiming.sortMs.toFixed(1)}, ` : "";
+    const serverTiming = `auth;dur=${authMs.toFixed(1)}, ${phaseTiming}list;dur=${listMs.toFixed(1)}, recent;dur=${recentMs.toFixed(1)}, total;dur=${totalMs.toFixed(1)}`;
     return NextResponse.json({ path: parsed.data, entries }, { headers: { ...noStore, "Server-Timing": serverTiming } });
   } catch (error) {
     return errorResponse(error);

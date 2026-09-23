@@ -10,14 +10,23 @@ export type StorageAdapterConfig = Readonly<{ filesRoot: string; dataDirectory: 
 export type StorageEntry = Readonly<{ name: string; logicalPath: string; kind: "file" | "folder"; sizeBytes: number; modifiedAt: string }>;
 export type StorageStat = StorageEntry;
 export type StagedUpload = Readonly<{ key: string; name: string; sizeBytes: number }>;
+export type StorageListTiming = Readonly<{
+  pathValidationMs: number;
+  directoryStatMs: number;
+  cache: "hit" | "miss" | "bypass";
+  readdirMs: number;
+  metadataMs: number;
+  sortMs: number;
+  entryCount: number;
+}>;
+export type StorageListOptions = Readonly<{ cache?: boolean; onTiming?: (timing: StorageListTiming) => void }>;
 export const MAX_STORAGE_RANGE_BYTES = 8 * 1024 * 1024;
-// Match the reference explorer's listing fan-out. The Windows bind mount is
-// latency-bound, so keeping only sixteen metadata reads in flight leaves the
-// directory queue under-filled while the container waits on the host disk.
+// Match the reference explorer's interactive listing fan-out. Background
+// index scans can opt into a lower value once fileserver measurements justify it.
 export const LIST_METADATA_CONCURRENCY = 64;
 
 export type StorageAdapter = Readonly<{
-  list(path: string, options?: Readonly<{ cache?: boolean }>): Promise<StorageEntry[]>;
+  list(path: string, options?: StorageListOptions): Promise<StorageEntry[]>;
   stat(path: string): Promise<StorageStat>;
   exists(path: string): Promise<boolean>;
   createDirectory(path: string): Promise<void>;
@@ -142,14 +151,24 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
     return totals;
   }
 
-  async function loadDirectoryList(logicalPath: string, useCache: boolean): Promise<StorageEntry[]> {
+  async function loadDirectoryList(logicalPath: string, useCache: boolean, onTiming?: (timing: StorageListTiming) => void): Promise<StorageEntry[]> {
+    const resolveStartedAt = performance.now();
     const directory = await resolveExisting(logicalPath);
+    const resolveMs = performance.now() - resolveStartedAt;
+    const directoryStartedAt = performance.now();
     const directoryStat = await statAsync(directory);
     if (!directoryStat.isDirectory()) throw new Error("NOT_A_DIRECTORY");
+    const directoryMs = performance.now() - directoryStartedAt;
     const fingerprint = String(directoryStat.mtimeMs);
     const cached = useCache ? listCache.get(logicalPath, fingerprint) : undefined;
-    if (cached) return cached;
+    if (cached) {
+      onTiming?.({ pathValidationMs: resolveMs, directoryStatMs: directoryMs, cache: "hit", readdirMs: 0, metadataMs: 0, sortMs: 0, entryCount: cached.length });
+      return cached;
+    }
+    const readdirStartedAt = performance.now();
     const entries = await readdir(directory, { withFileTypes: true });
+    const readdirMs = performance.now() - readdirStartedAt;
+    const metadataStartedAt = performance.now();
     const result = (await mapWithConcurrency(entries, LIST_METADATA_CONCURRENCY, async (entry) => {
       if (!isSafeStorageName(entry.name)) return null;
       const childPath = path.join(directory, entry.name);
@@ -166,7 +185,11 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
         modifiedAt: childStat.mtime.toISOString(),
       } satisfies StorageEntry;
     })).filter((entry): entry is StorageEntry => entry !== null);
+    const metadataMs = performance.now() - metadataStartedAt;
+    const sortStartedAt = performance.now();
     const sorted = result.sort((left, right) => Number(right.kind === "folder") - Number(left.kind === "folder") || left.name.localeCompare(right.name));
+    const sortMs = performance.now() - sortStartedAt;
+    onTiming?.({ pathValidationMs: resolveMs, directoryStatMs: directoryMs, cache: useCache ? "miss" : "bypass", readdirMs, metadataMs, sortMs, entryCount: sorted.length });
     if (useCache) listCache.set(logicalPath, fingerprint, sorted);
     return sorted;
   }
@@ -174,10 +197,10 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
   return {
     async list(logicalPath, options) {
       const normalizedPath = normalizeLogicalPath(logicalPath);
-      if (options?.cache === false) return loadDirectoryList(normalizedPath, false);
+      if (options?.cache === false) return loadDirectoryList(normalizedPath, false, options?.onTiming);
       const existing = inFlightLists.get(normalizedPath);
       if (existing) return existing;
-      const pending = loadDirectoryList(normalizedPath, true).finally(() => inFlightLists.delete(normalizedPath));
+      const pending = loadDirectoryList(normalizedPath, true, options?.onTiming).finally(() => inFlightLists.delete(normalizedPath));
       inFlightLists.set(normalizedPath, pending);
       return pending;
     },

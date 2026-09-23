@@ -12,7 +12,7 @@ import { listRecycleEntries } from "@/features/recycle/recycle-repository";
 import { runRecycleMaintenance } from "@/features/recycle/retention-service";
 import { beginOperation, completeOperation, failOperation, withPathLocks, type FileOperation } from "./operation-repository";
 import { normalizeLogicalPath, validateName } from "./path-policy";
-import type { StorageAdapter, StorageEntry } from "./storage-adapter";
+import type { StorageAdapter, StorageEntry, StorageListOptions } from "./storage-adapter";
 import { beginFolderRead } from "@/features/discovery/folder-read-priority";
 
 export type FileActor = Readonly<{ id: string; role: "user" | "admin" }>;
@@ -191,9 +191,9 @@ export function createFileService({ database, storage, retentionDays = 30 }: Dep
     runMaintenance() {
       return runRecycleMaintenance(database, storage);
     },
-    async list(pathName: string): Promise<StorageEntry[]> {
+    async list(pathName: string, options?: StorageListOptions): Promise<StorageEntry[]> {
       const release = beginFolderRead();
-      try { return await storage.list(normalizeLogicalPath(pathName)); }
+      try { return await storage.list(normalizeLogicalPath(pathName), options); }
       finally { release(); }
     },
   };
