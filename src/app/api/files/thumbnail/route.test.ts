@@ -11,7 +11,7 @@ import { GET } from "./route";
 beforeEach(() => { mocks.user.mockReset(); mocks.storage.mockReset(); mocks.config.mockReset(); mocks.thumbnail.mockReset(); mocks.storage.mockReturnValue({}); mocks.config.mockReturnValue({ dataDirectory: "C:/spark-data" }); });
 
 describe("thumbnail route", () => {
-  it("requires auth and no-store", async () => {
+  it("requires auth and keeps unauthorized responses uncached", async () => {
     mocks.user.mockResolvedValue(null);
     const response = await GET(new Request("http://spark.test/api/files/thumbnail?path=photo.png"));
     expect(response.status).toBe(401);
@@ -24,7 +24,16 @@ describe("thumbnail route", () => {
     const response = await GET(new Request("http://spark.test/api/files/thumbnail?path=photo.png"));
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("image/webp");
-    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("cache-control")).toBe("private, max-age=300, must-revalidate");
+    expect(response.headers.get("etag")).toMatch(/^"[a-f0-9]+"$/);
+  });
+
+  it("returns not modified for a matching thumbnail validator", async () => {
+    mocks.user.mockResolvedValue({ id: "user-1", role: "user" });
+    mocks.thumbnail.mockResolvedValue({ buffer: Buffer.from("image"), mimeType: "image/webp" });
+    const first = await GET(new Request("http://spark.test/api/files/thumbnail?path=photo.png"));
+    const response = await GET(new Request("http://spark.test/api/files/thumbnail?path=photo.png", { headers: { "if-none-match": first.headers.get("etag") ?? "" } }));
+    expect(response.status).toBe(304);
   });
 
   it("keeps private headers when auth or storage fails", async () => {

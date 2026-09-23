@@ -26,6 +26,11 @@ describe("loadConfig", () => {
     expect(loadConfig(validEnvironment({ SPARK_TERMINAL_ENABLED: "true" })).terminalEnabled).toBe(true);
   });
 
+  it("keeps document conversion disabled unless configured", () => {
+    expect(loadConfig(validEnvironment()).previewConverterUrl).toBeNull();
+    expect(loadConfig(validEnvironment({ SPARK_PREVIEW_CONVERTER_URL: "http://converter:3000/forms/libreoffice/convert" })).previewConverterUrl?.href).toBe("http://converter:3000/forms/libreoffice/convert");
+  });
+
   it("rejects relative roots", () => {
     expect(() =>
       loadConfig(validEnvironment({ SPARK_FILES_ROOT: ".\\files" })),

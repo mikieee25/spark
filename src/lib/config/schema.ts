@@ -7,6 +7,7 @@ export const environmentSchema = z.object({
   SPARK_SESSION_SECRET: z.string().min(32),
   SPARK_TRUST_PROXY: z.enum(["true", "false"]).default("false"),
   SPARK_TERMINAL_ENABLED: z.enum(["true", "false"]).default("false"),
+  SPARK_PREVIEW_CONVERTER_URL: z.preprocess((value) => typeof value === "string" && !value.trim() ? undefined : value, z.string().trim().url().optional()),
 });
 
 export type AppConfig = Readonly<{
@@ -17,4 +18,5 @@ export type AppConfig = Readonly<{
   sessionSecret: string;
   trustProxy: boolean;
   terminalEnabled: boolean;
+  previewConverterUrl: URL | null;
 }>;

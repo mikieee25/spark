@@ -35,6 +35,13 @@ function parseOrigin(value: string): URL {
   return origin;
 }
 
+function parseConverterUrl(value: string | undefined): URL | null {
+  if (!value) return null;
+  const url = new URL(value);
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error("SPARK_PREVIEW_CONVERTER_URL must use HTTP(S)");
+  return url;
+}
+
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = environmentSchema.safeParse(environment);
   if (!parsed.success) {
@@ -56,5 +63,6 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     sessionSecret: parsed.data.SPARK_SESSION_SECRET,
     trustProxy: parsed.data.SPARK_TRUST_PROXY === "true",
     terminalEnabled: parsed.data.SPARK_TERMINAL_ENABLED === "true",
+    previewConverterUrl: parseConverterUrl(parsed.data.SPARK_PREVIEW_CONVERTER_URL),
   });
 }

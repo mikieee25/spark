@@ -12,7 +12,7 @@ import { anonymousReadRateLimiter, rateLimitKey } from "@/lib/http/request-rate-
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "private, no-store" };
-const clientErrors = new Set(["INVALID_PATH", "NOT_FOUND", "NOT_A_FILE", "UNSUPPORTED_PREVIEW", "INVALID_RANGE", "RANGE_NOT_SATISFIABLE", "RANGE_TOO_LARGE", "ARCHIVE_UNSAFE_ENTRY", "INVALID_ARCHIVE", "UNSUPPORTED_ARCHIVE"]);
+const clientErrors = new Set(["INVALID_PATH", "NOT_FOUND", "NOT_A_FILE", "UNSUPPORTED_PREVIEW", "INVALID_RANGE", "RANGE_NOT_SATISFIABLE", "RANGE_TOO_LARGE", "ARCHIVE_UNSAFE_ENTRY", "INVALID_ARCHIVE", "UNSUPPORTED_ARCHIVE", "INVALID_DOCUMENT_PREVIEW", "INVALID_SPREADSHEET_PREVIEW"]);
 
 function errorResponse(error: unknown): Response {
   const rawCode = error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT" ? "ENOENT" : error instanceof Error ? error.message : "PREVIEW_ERROR";

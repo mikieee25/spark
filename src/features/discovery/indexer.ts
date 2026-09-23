@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { MAX_INDEXED_TEXT_BYTES, replaceIndexEntry, replaceIndexText, updateIndexState } from "./discovery-repository";
 import { classifyContent } from "./content-classifier";
 import type { StorageAdapter, StorageEntry } from "@/features/files/storage-adapter";
+import { waitForFolderReadsToFinish } from "./folder-read-priority";
 
 type IndexerOptions = Readonly<{ database: Database.Database; storage: StorageAdapter; maxEntries?: number }>;
 type IndexRun = Readonly<{ processed: number; completed: boolean }>;
@@ -9,7 +10,7 @@ type IndexRun = Readonly<{ processed: number; completed: boolean }>;
 async function nextEntries(storage: StorageAdapter, cursor: string | null, limit: number): Promise<{ entries: StorageEntry[]; complete: boolean }> {
   const entries: StorageEntry[] = [];
   async function visit(parentPath: string): Promise<boolean> {
-    const children = (await storage.list(parentPath)).sort((left, right) => left.logicalPath.localeCompare(right.logicalPath));
+    const children = (await storage.list(parentPath, { cache: false })).sort((left, right) => left.logicalPath.localeCompare(right.logicalPath));
     for (const entry of children) {
       if (entries.length >= limit) return false;
       const beforeCursor = cursor && entry.logicalPath < cursor;
@@ -34,6 +35,7 @@ export async function runIndexMaintenance({ database, storage, maxEntries = 100 
   updateIndexState(database, { generation, cursor, status: "running", error: null });
 
   try {
+    await waitForFolderReadsToFinish();
     const { entries: pending, complete } = await nextEntries(storage, cursor, limit);
     for (const entry of pending) {
       const classification = classifyContent(entry.name);

@@ -11,6 +11,7 @@ services:
       SPARK_FILES_ROOT: /files
       SPARK_SESSION_SECRET: "${SPARK_SESSION_SECRET:?Set SPARK_SESSION_SECRET to at least 32 random characters}"
       SPARK_TRUST_PROXY: "${SPARK_TRUST_PROXY:-false}"
+      SPARK_PREVIEW_CONVERTER_URL: "${SPARK_PREVIEW_CONVERTER_URL:-}"
     volumes:
       - type: bind
         source: "${SPARK_DATA_DIR_HOST:-./spark-data}"
@@ -26,3 +27,10 @@ services:
       start_period: 20s
     security_opt:
       - no-new-privileges:true
+
+  preview-converter:
+    image: gotenberg/gotenberg:8
+    profiles: ["preview"]
+    restart: unless-stopped
+    expose:
+      - "3000"

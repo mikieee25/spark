@@ -9,10 +9,14 @@ import { getIndexState } from "@/features/discovery/discovery-repository";
 import { getRetentionDays } from "@/features/admin/settings-repository";
 
 let maintenanceStarted = false;
+let storageRuntime: Readonly<{ filesRoot: string; dataDirectory: string; storage: ReturnType<typeof createStorageAdapter> }> | null = null;
 
 export function getFileStorage() {
   const config = loadConfig();
-  return createStorageAdapter({ filesRoot: config.filesRoot, dataDirectory: config.dataDirectory });
+  if (storageRuntime?.filesRoot === config.filesRoot && storageRuntime.dataDirectory === config.dataDirectory) return storageRuntime.storage;
+  const storage = createStorageAdapter({ filesRoot: config.filesRoot, dataDirectory: config.dataDirectory });
+  storageRuntime = { filesRoot: config.filesRoot, dataDirectory: config.dataDirectory, storage };
+  return storage;
 }
 
 export function getFileService() {

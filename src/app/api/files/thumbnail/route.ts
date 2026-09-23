@@ -19,7 +19,10 @@ export async function GET(request: Request): Promise<Response> {
     if (!logicalPath) return NextResponse.json({ error: "INVALID_PATH" }, { status: 400, headers: noStore });
     const normalizedPath = normalizeLogicalPath(logicalPath);
     const result = await createThumbnailService({ storage: getFileStorage(), dataDirectory: loadConfig().dataDirectory }).getThumbnail(normalizedPath);
-    return new Response(result.buffer as unknown as BodyInit, { headers: { ...noStore, "Content-Type": result.mimeType, "Content-Length": String(result.buffer.byteLength) } });
+    const etag = `"${createHash("sha256").update(result.buffer).digest("hex")}"`;
+    const headers = { "Cache-Control": "private, max-age=300, must-revalidate", Vary: "Cookie", ETag: etag, "Content-Type": result.mimeType, "Content-Length": String(result.buffer.byteLength) };
+    if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers });
+    return new Response(result.buffer as unknown as BodyInit, { headers });
   } catch (error) {
     const rawCode = error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT" ? "ENOENT" : error instanceof Error ? error.message : "THUMBNAIL_ERROR";
     const code = rawCode === "ENOENT" ? "NOT_FOUND" : rawCode;
@@ -27,3 +30,4 @@ export async function GET(request: Request): Promise<Response> {
     return NextResponse.json({ error: status === 500 ? "THUMBNAIL_ERROR" : code }, { status, headers: noStore });
   }
 }
+import { createHash } from "node:crypto";

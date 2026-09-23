@@ -3,15 +3,18 @@ import { mkdir, lstat, open, readdir, readFile, realpath, rename, rm, stat as st
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { isContained, isSafeStorageName, normalizeLogicalPath, validateName } from "./path-policy";
+import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
+import { createDirectoryListCache } from "./directory-list-cache";
 
 export type StorageAdapterConfig = Readonly<{ filesRoot: string; dataDirectory: string }>;
 export type StorageEntry = Readonly<{ name: string; logicalPath: string; kind: "file" | "folder"; sizeBytes: number; modifiedAt: string }>;
 export type StorageStat = StorageEntry;
 export type StagedUpload = Readonly<{ key: string; name: string; sizeBytes: number }>;
 export const MAX_STORAGE_RANGE_BYTES = 8 * 1024 * 1024;
+export const LIST_METADATA_CONCURRENCY = 16;
 
 export type StorageAdapter = Readonly<{
-  list(path: string): Promise<StorageEntry[]>;
+  list(path: string, options?: Readonly<{ cache?: boolean }>): Promise<StorageEntry[]>;
   stat(path: string): Promise<StorageStat>;
   exists(path: string): Promise<boolean>;
   createDirectory(path: string): Promise<void>;
@@ -45,6 +48,7 @@ function privateKeyPath(dataDirectory: string, area: "staging" | "recycle" | "ve
 export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapter {
   const root = path.resolve(config.filesRoot);
   const dataDirectory = path.resolve(config.dataDirectory);
+  const listCache = createDirectoryListCache<StorageEntry[]>({ ttlMs: 3_000, maxEntries: 128 });
   function resolveLogical(logicalPath: string): string {
     const normalized = normalizeLogicalPath(logicalPath);
     const candidate = path.resolve(root, ...normalized ? normalized.split("/") : []);
@@ -135,29 +139,33 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
   }
 
   return {
-    async list(logicalPath) {
+    async list(logicalPath, options) {
       const directory = await resolveExisting(logicalPath);
       const directoryStat = await statAsync(directory);
       if (!directoryStat.isDirectory()) throw new Error("NOT_A_DIRECTORY");
+      const fingerprint = String(directoryStat.mtimeMs);
+      const cached = options?.cache === false ? undefined : listCache.get(logicalPath, fingerprint);
+      if (cached) return cached;
       const entries = await readdir(directory, { withFileTypes: true });
-      const result: StorageEntry[] = [];
-      for (const entry of entries) {
-        if (!isSafeStorageName(entry.name)) continue;
+      const result = (await mapWithConcurrency(entries, LIST_METADATA_CONCURRENCY, async (entry) => {
+        if (!isSafeStorageName(entry.name)) return null;
         const childPath = path.join(directory, entry.name);
         if (entry.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
         const childStat = await lstat(childPath);
         if (childStat.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
-        if (!childStat.isFile() && !childStat.isDirectory()) continue;
+        if (!childStat.isFile() && !childStat.isDirectory()) return null;
         const childLogical = normalizeLogicalPath(logicalPath ? `${logicalPath}/${entry.name}` : entry.name);
-        result.push({
+        return {
           name: entry.name,
           logicalPath: childLogical,
           kind: childStat.isDirectory() ? "folder" : "file",
           sizeBytes: childStat.isFile() ? childStat.size : 0,
           modifiedAt: childStat.mtime.toISOString(),
-        });
-      }
-      return result.sort((left, right) => Number(right.kind === "folder") - Number(left.kind === "folder") || left.name.localeCompare(right.name));
+        } satisfies StorageEntry;
+      })).filter((entry): entry is StorageEntry => entry !== null);
+      const sorted = result.sort((left, right) => Number(right.kind === "folder") - Number(left.kind === "folder") || left.name.localeCompare(right.name));
+      if (options?.cache !== false) listCache.set(logicalPath, fingerprint, sorted);
+      return sorted;
     },
     async stat(logicalPath) {
       const target = await resolveExisting(logicalPath);
