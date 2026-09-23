@@ -178,6 +178,26 @@ describe("indexer", () => {
     expect(reads).toBe(1);
   });
 
+  it("yields the event loop between indexed entries", async () => {
+    const entries = Array.from({ length: 8 }, (_, index) => ({
+      name: `entry-${index}.txt`,
+      logicalPath: `entry-${index}.txt`,
+      kind: "file" as const,
+      sizeBytes: 1,
+      modifiedAt: `2026-09-22T00:00:0${index}.000Z`,
+    }));
+    const storage = {
+      list: async () => entries,
+      readFile: async () => Buffer.from("text"),
+    } as unknown as ReturnType<typeof createStorageAdapter>;
+    let yielded = false;
+    setImmediate(() => { yielded = true; });
+
+    await runIndexMaintenance({ database, storage, maxEntries: entries.length });
+
+    expect(yielded).toBe(true);
+  });
+
   it("removes stale FTS content when a text file becomes binary", async () => {
     const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });
     await fs.writeFile(path.join(root, "changing.txt"), "needle");

@@ -7,6 +7,10 @@ import { waitForFolderReadsToFinish } from "./folder-read-priority";
 type IndexerOptions = Readonly<{ database: Database.Database; storage: StorageAdapter; maxEntries?: number }>;
 type IndexRun = Readonly<{ processed: number; completed: boolean }>;
 
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 async function nextEntries(storage: StorageAdapter, cursor: string | null, limit: number): Promise<{ entries: StorageEntry[]; complete: boolean }> {
   const entries: StorageEntry[] = [];
   async function visit(parentPath: string): Promise<boolean> {
@@ -40,6 +44,10 @@ export async function runIndexMaintenance({ database, storage, maxEntries = 100 
     const { entries: pending, complete } = await nextEntries(storage, cursor, limit);
     for (const entry of pending) {
       await waitForFolderReadsToFinish();
+      // Index updates use synchronous SQLite statements. Yield before each
+      // entry so HTTP requests can enter the event loop between writes instead
+      // of waiting for an entire batch to finish.
+      await yieldToEventLoop();
       const classification = classifyContent(entry.name);
       const indexedAt = new Date().toISOString();
       const parentPath = entry.logicalPath.includes("/") ? entry.logicalPath.slice(0, entry.logicalPath.lastIndexOf("/")) : "";
