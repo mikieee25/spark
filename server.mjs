@@ -1,6 +1,8 @@
 import { createServer } from "node:http";
 import next from "next";
 
+if (!process.env.UV_THREADPOOL_SIZE) process.env.UV_THREADPOOL_SIZE = "16";
+
 const development = process.env.NODE_ENV !== "production";
 const hostname = process.env.SPARK_HOST || "0.0.0.0";
 const port = Number.parseInt(process.env.PORT || "3000", 10);

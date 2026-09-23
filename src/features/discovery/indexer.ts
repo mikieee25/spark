@@ -10,6 +10,7 @@ type IndexRun = Readonly<{ processed: number; completed: boolean }>;
 async function nextEntries(storage: StorageAdapter, cursor: string | null, limit: number): Promise<{ entries: StorageEntry[]; complete: boolean }> {
   const entries: StorageEntry[] = [];
   async function visit(parentPath: string): Promise<boolean> {
+    await waitForFolderReadsToFinish();
     const children = (await storage.list(parentPath, { cache: false })).sort((left, right) => left.logicalPath.localeCompare(right.logicalPath));
     for (const entry of children) {
       if (entries.length >= limit) return false;

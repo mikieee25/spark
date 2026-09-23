@@ -24,6 +24,7 @@ RUN npm ci --omit=dev
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 SPARK_HOST=0.0.0.0
+ENV UV_THREADPOOL_SIZE=16
 RUN groupadd --system --gid 1001 spark && useradd --system --uid 1001 --gid spark spark
 COPY --from=production-dependencies --chown=spark:spark /app/node_modules ./node_modules
 COPY --from=builder --chown=spark:spark /app/.next ./.next
