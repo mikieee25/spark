@@ -29,17 +29,17 @@ describe("storage adapter", () => {
     expect(await fs.readFile(path.join(root, "Reports", "note.txt"), "utf8")).toBe("DOE");
   });
 
-  it("calculates recursive folder sizes for listings and stats", async () => {
+  it("keeps listings fast while retaining recursive sizes for explicit stats", async () => {
     await fs.mkdir(path.join(root, "Reports", "2026"), { recursive: true });
     await fs.writeFile(path.join(root, "Reports", "brief.txt"), "DOE");
     await fs.writeFile(path.join(root, "Reports", "2026", "budget.bin"), Buffer.alloc(5));
     const adapter = createStorageAdapter({ filesRoot: root, dataDirectory: data });
 
     await expect(adapter.list("")).resolves.toEqual([
-      expect.objectContaining({ name: "Reports", kind: "folder", sizeBytes: 8 }),
+      expect.objectContaining({ name: "Reports", kind: "folder", sizeBytes: 0 }),
     ]);
     await expect(adapter.list("Reports")).resolves.toEqual([
-      expect.objectContaining({ name: "2026", kind: "folder", sizeBytes: 5 }),
+      expect.objectContaining({ name: "2026", kind: "folder", sizeBytes: 0 }),
       expect.objectContaining({ name: "brief.txt", kind: "file", sizeBytes: 3 }),
     ]);
     await expect(adapter.stat("Reports")).resolves.toEqual(expect.objectContaining({ kind: "folder", sizeBytes: 8 }));

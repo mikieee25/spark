@@ -139,7 +139,6 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
       const directory = await resolveExisting(logicalPath);
       const directoryStat = await statAsync(directory);
       if (!directoryStat.isDirectory()) throw new Error("NOT_A_DIRECTORY");
-      const folderSizes = await calculateFolderSizes(logicalPath);
       const entries = await readdir(directory, { withFileTypes: true });
       const result: StorageEntry[] = [];
       for (const entry of entries) {
@@ -154,7 +153,7 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
           name: entry.name,
           logicalPath: childLogical,
           kind: childStat.isDirectory() ? "folder" : "file",
-          sizeBytes: childStat.isFile() ? childStat.size : folderSizes.get(childLogical) ?? 0,
+          sizeBytes: childStat.isFile() ? childStat.size : 0,
           modifiedAt: childStat.mtime.toISOString(),
         });
       }
