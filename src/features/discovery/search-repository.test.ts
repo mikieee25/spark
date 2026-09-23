@@ -23,6 +23,8 @@ function createDatabase() {
   add("docs/alpha.txt", "alpha.txt", "file", "quarterly report");
   add("docs/beta.md", "beta.md", "file", "quarterly notes");
   add("photos/alpha.png", "alpha.png", "file");
+  add("reports", "reports", "folder");
+  add("docs/Activity Calendar", "Activity Calendar", "folder");
   return { database, add };
 }
 
@@ -31,6 +33,16 @@ describe("search repository", () => {
     const { database } = createDatabase();
     expect(searchFiles(database, { query: "quarterly", pathPrefix: "docs", kind: "file", limit: 10 }).items.map((item) => item.logicalPath))
       .toEqual(["docs/alpha.txt", "docs/beta.md"]);
+  });
+
+  it("includes folder names in the default search", () => {
+    const { database } = createDatabase();
+    expect(searchFiles(database, { query: "reports", limit: 10 }).items).toEqual([
+      expect.objectContaining({ logicalPath: "reports", name: "reports", kind: "folder" }),
+    ]);
+    expect(searchFiles(database, { query: "Activity Calendar", limit: 10 }).items).toEqual([
+      expect.objectContaining({ logicalPath: "docs/Activity Calendar", name: "Activity Calendar", kind: "folder" }),
+    ]);
   });
 
   it("returns bounded deterministic pages with an opaque cursor", () => {

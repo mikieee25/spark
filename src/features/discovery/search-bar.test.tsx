@@ -13,7 +13,7 @@ describe("SearchBar", () => {
     fireEvent.change(input, { target: { value: "energy outlook" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
-    expect(onSearch).toHaveBeenCalledWith("energy outlook");
+    expect(onSearch).toHaveBeenCalledWith("energy outlook", "all");
     expect(screen.getByText("Searching…")).toBeInTheDocument();
   });
 
@@ -26,6 +26,15 @@ describe("SearchBar", () => {
     expect(onSearch).not.toHaveBeenCalled();
     vi.advanceTimersByTime(300);
 
-    expect(onSearch).toHaveBeenCalledWith("budget");
+    expect(onSearch).toHaveBeenCalledWith("budget", "all");
+  });
+
+  it("submits an explicit folder scope", () => {
+    const onSearch = vi.fn();
+    render(<SearchBar onSearch={onSearch} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Search item type" }), { target: { value: "folder" } });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search workspace" }), { target: { value: "reports" } });
+    fireEvent.keyDown(screen.getByRole("searchbox", { name: "Search workspace" }), { key: "Enter" });
+    expect(onSearch).toHaveBeenCalledWith("reports", "folder");
   });
 });

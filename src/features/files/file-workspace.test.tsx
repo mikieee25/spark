@@ -35,6 +35,20 @@ describe("FileWorkspace", () => {
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/api/search?"), expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
+  it("searches folder names when the folder scope is selected", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({
+      items: [{ name: "Reports", logicalPath: "Reports", kind: "folder", sizeBytes: 0, modifiedAt: "2026-09-22T00:00:00.000Z", extension: "", mimeType: "" }],
+      nextCursor: null,
+    }), { status: 200 }));
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Search item type" }), { target: { value: "folder" } });
+    const input = screen.getByRole("searchbox", { name: "Search workspace" });
+    fireEvent.change(input, { target: { value: "reports" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(await screen.findByRole("button", { name: "Open search result Reports" })).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining("kind=folder"), expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+
   it("renders search loading, results, selection, and empty states", async () => {
     let resolveSearch!: (value: Response) => void;
     vi.mocked(fetch).mockImplementationOnce(() => new Promise((resolve) => { resolveSearch = resolve; }));

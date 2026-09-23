@@ -2,10 +2,19 @@
   color-scheme: light;
   --doe-blue: #0000fe;
   --doe-yellow: #ffff00;
+  --doe-blue-light: #397dff;
+  --doe-blue-balanced: #1f5bf6;
+  --doe-blue-bold: #0341cb;
+  --doe-blue-deep: #0016a8;
+  --doe-yellow-light: #fffe77;
+  --doe-yellow-balanced: #ffee4d;
+  --doe-yellow-bold: #fadb09;
+  --doe-yellow-deep: #e8b911;
   --pulse: #1f5bf6;
   --warning: #e8b911;
   --canvas: #f3f6fb;
-  --canvas-deep: #07152c;
+  --canvas-deep: #ffffff;
+  --canvas-hero: #07152c;
   --paper: #ffffff;
   --paper-dim: #e9eef7;
   --ink: #13233d;
@@ -13,15 +22,25 @@
   --pulse-soft: #dfe9ff;
   --destructive: #c52935;
   --success: #087a55;
+  --info: #2563eb;
   --file-purple: #7c3aed;
   --line: #d4dce9;
   --focus: #005fcc;
   --shadow: 0 16px 50px rgb(11 34 74 / 10%);
+  --chart-primary: var(--pulse);
+  --chart-secondary: var(--warning);
+  --chart-tertiary: var(--file-purple);
+  --chart-muted: var(--ink-muted);
+  --chart-neutral: var(--line);
 }
-[data-theme="dark"] {
+:root[data-theme="light"], .light {
+  color-scheme: light;
+}
+.dark, :root[data-theme="dark"] {
   color-scheme: dark;
   --canvas: #07111f;
-  --canvas-deep: #030a15;
+  --canvas-deep: #0e1d3b;
+  --canvas-hero: #030a15;
   --paper: #101e31;
   --paper-dim: #172941;
   --ink: #f1f6ff;

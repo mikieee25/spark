@@ -18,21 +18,21 @@ export default async function ActivityPage() {
     <section className="mx-auto max-w-[1200px] space-y-6">
       <PageHeader eyebrow="Activity" title="Activity history" description="Append-only records of authentication, system, and file operations." actions={<a className={buttonVariants({ variant: "outline" })} href="/api/admin/activity/export">Export CSV</a>} />
       {events.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-[var(--line)] p-6 text-muted-foreground">
+        <p className="rounded-xl border border-dashed border-border p-6 text-muted-foreground">
           No activity recorded yet.
         </p>
       ) : (
-        <ol className="divide-y divide-[var(--line)] overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--paper)]">
+        <ol className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
           {events.map((event) => (
             <li className="grid gap-2 p-5 sm:grid-cols-[1fr_auto] sm:items-center" key={event.id}>
               <div>
                 <p className="font-bold">{event.action.replaceAll("_", " ")}</p>
-                <p className="mt-1 text-sm text-[var(--ink-muted)]">
+                <p className="mt-1 text-sm text-muted-foreground">
                   {actorLabel(event)} · {event.outcome}
                   {event.paths.length > 0 ? ` · ${event.paths.join(", ")}` : ""}
                 </p>
               </div>
-              <time className="text-sm text-[var(--ink-muted)]" dateTime={event.occurredAt}>
+              <time className="text-sm text-muted-foreground" dateTime={event.occurredAt}>
                 {new Date(event.occurredAt).toLocaleString("en-PH")}
               </time>
             </li>

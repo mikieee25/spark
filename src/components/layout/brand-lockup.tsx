@@ -14,7 +14,7 @@ export function BrandLockup({ compact = false }: { compact?: boolean }) {
       {!compact && (
         <span>
           <strong className="block text-lg tracking-[0.18em]">SPARK</strong>
-          <small className="block text-[11px] text-[var(--ink-muted)]">
+          <small className="block text-[11px] text-muted-foreground">
             Archives · Records · Knowledge
           </small>
         </span>
