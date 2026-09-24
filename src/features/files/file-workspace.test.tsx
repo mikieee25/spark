@@ -16,6 +16,7 @@ beforeEach(() => {
 describe("FileWorkspace", () => {
   it("renders a server-provided file workspace", () => {
     render(<FileWorkspace initialPath="" initialEntries={entries} />);
+    expect(document.querySelector("[data-file-workspace]")).toHaveClass("w-full");
     expect(screen.getByRole("heading", { name: "Shared files" })).toBeInTheDocument();
     expect(screen.getByText("Q3 Energy Outlook.pdf")).toBeInTheDocument();
     expect(screen.getByText("Local-first workspace · OneDrive sync stays external to SPARK")).toBeInTheDocument();
@@ -202,6 +203,23 @@ describe("FileWorkspace", () => {
     expect(await screen.findByRole("dialog", { name: "Selected item details" })).toBeVisible();
     expect(screen.getByRole("region", { name: "Preview of DOE seal.png" })).toBeInTheDocument();
     expect(document.querySelector('[data-slot="sheet-overlay"]')).toBeInTheDocument();
+  });
+
+  it("shows a folder icon preview inside the details drawer", async () => {
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+
+    expect(await screen.findByRole("region", { name: "Preview of Reports" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Preview of Reports" }).querySelector("svg")).toBeInTheDocument();
+  });
+
+  it("uses the wide responsive details drawer width", async () => {
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+
+    expect(await screen.findByRole("dialog", { name: "Selected item details" })).toHaveClass("sm:!max-w-xl");
   });
 
   it("offers all Explorer view modes and sort controls", () => {

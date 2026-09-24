@@ -40,6 +40,9 @@ test("administrator can upload, download, recycle, restore, and purge a file", a
 test("single click opens details and double click opens the folder", async ({ page }) => {
   await signIn(page);
   await expect(page.getByLabel("Content")).toHaveCSS("overflow", "hidden");
+  const workspace = page.locator("[data-file-workspace]");
+  const main = page.getByLabel("Content");
+  expect(await workspace.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(await main.evaluate((element) => element.getBoundingClientRect().width) * 0.8);
   await expect(page.getByRole("region", { name: "File list scroll area" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
   await page.getByRole("button", { name: "New folder" }).click();
@@ -48,7 +51,10 @@ test("single click opens details and double click opens the folder", async ({ pa
 
   const folder = page.getByRole("button", { name: "Double click folder", exact: true });
   await folder.click();
-  await expect(page.getByRole("dialog", { name: "Selected item details" })).toBeVisible();
+  const details = page.getByRole("dialog", { name: "Selected item details" });
+  await expect(details).toBeVisible();
+  await expect(page.getByRole("region", { name: "Preview of Double click folder" })).toBeVisible();
+  expect(await details.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(400);
   await expect(page.locator('[data-slot="sheet-overlay"]')).toBeVisible();
   await page.getByRole("button", { name: "Close details" }).click();
 
