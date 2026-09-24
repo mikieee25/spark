@@ -14,12 +14,12 @@ export function AppShell({
   children: ReactNode;
 }) {
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[16rem_1fr]">
+    <div data-app-shell className="min-h-screen md:grid md:grid-cols-[16rem_1fr]">
       <Sidebar user={user} />
-      <div className="min-w-0">
+      <div data-app-content className="min-w-0">
         <header
           aria-label="Header"
-          className="flex min-h-20 items-center justify-between border-b border-border bg-background px-6 sm:px-8"
+          className="flex min-h-20 shrink-0 items-center justify-between border-b border-border bg-background px-6 sm:px-8"
         >
           <div className="flex min-w-0 items-center gap-3">
             <Image
@@ -47,7 +47,7 @@ export function AppShell({
           </div>
         </header>
         <AnonymousBanner />{" "}
-        <main aria-label="Content" className="p-6 sm:p-8">
+        <main data-app-main aria-label="Content" className="p-6 sm:p-8">
           {children}
         </main>
       </div>

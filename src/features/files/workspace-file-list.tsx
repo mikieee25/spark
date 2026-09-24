@@ -104,7 +104,7 @@ export function WorkspaceFileList({ entries, selectedPath, onSelect, onOpen, onR
     </ContextMenu>;
   }
 
-  return <div className="min-w-0" data-view-mode={viewMode} role="list" aria-label="Workspace files">
+  return <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-view-mode={viewMode} role="region" aria-label="Workspace files">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-3 sm:px-4">
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2 text-xs text-muted-foreground">View<select aria-label="View mode" className="h-10 rounded-lg border bg-background px-3 text-sm text-foreground" value={viewMode} onChange={(event) => setViewMode(event.target.value as WorkspaceViewMode)}>{VIEW_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}</select></label>
@@ -113,10 +113,12 @@ export function WorkspaceFileList({ entries, selectedPath, onSelect, onOpen, onR
       </div>
       <span className="text-xs text-muted-foreground">{entries.length} items</span>
     </div>
-    {viewMode === "details" && <div className="hidden grid-cols-[minmax(0,1fr)_6rem_9rem_auto] items-center gap-3 border-b px-6 py-2 text-xs font-medium text-muted-foreground md:grid"><span>Name</span><span>Size</span><span>Modified</span><span /></div>}
-    <div className={VIEW_GRID[viewMode]}>{pageEntries.map((entry) => <div className={viewMode.includes("icons") ? "flex min-w-0 flex-col items-center gap-2 rounded-xl p-2 text-center" : viewMode === "tiles" ? "rounded-xl border" : ""} key={entry.logicalPath}>{row(entry, viewMode === "small-icons" || viewMode === "list" || viewMode === "details")}</div>)}</div>
+    {viewMode === "details" && <div className="hidden shrink-0 grid-cols-[minmax(0,1fr)_6rem_9rem_auto] items-center gap-3 border-b bg-card px-6 py-2 text-xs font-medium text-muted-foreground md:grid"><span>Name</span><span>Size</span><span>Modified</span><span /></div>}
+    <div role="region" aria-label="File list scroll area" tabIndex={0} className="min-h-0 flex-1 overflow-x-auto overflow-y-auto overscroll-contain">
+      <div role="list" aria-label="File and folder entries" className={VIEW_GRID[viewMode]}>{pageEntries.map((entry) => <div className={viewMode.includes("icons") ? "flex min-w-0 flex-col items-center gap-2 rounded-xl p-2 text-center" : viewMode === "tiles" ? "rounded-xl border" : ""} key={entry.logicalPath}>{row(entry, viewMode === "small-icons" || viewMode === "list" || viewMode === "details")}</div>)}</div>
+    </div>
     {entries.length > 0 && <PaginationControls label="Workspace files" totalItems={entries.length} page={currentPage} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />}
-  </div>;
+  </section>;
 }
 
 function formatSize(size: number): string {

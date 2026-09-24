@@ -13,6 +13,18 @@ a { color: inherit; }
 ::selection { background: var(--pulse-soft); color: var(--ink); }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 
+@media (min-width: 64rem) {
+  [data-app-shell]:has([data-file-workspace]) { height: 100dvh; overflow: hidden; }
+  [data-app-content]:has([data-file-workspace]) { display: flex; height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; }
+  [data-app-main]:has([data-file-workspace]) { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; overflow: hidden; }
+}
+
+@media (min-width: 64rem) and (max-height: 50rem) {
+  [data-app-main]:has([data-file-workspace]) { @apply py-4; }
+  [data-file-workspace] { @apply gap-3; }
+  [data-file-stats] { display: none; }
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: var(--font-sans);

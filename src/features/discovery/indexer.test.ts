@@ -96,18 +96,20 @@ describe("indexer", () => {
     const base = createStorageAdapter({ filesRoot: root, dataDirectory: data });
     let listCalls = 0;
     let releaseFolderRead!: () => void;
+    let markFolderReadStarted!: () => void;
+    const folderReadStarted = new Promise<void>((resolve) => { markFolderReadStarted = resolve; });
     const storage = {
       ...base,
       list: async (logicalPath: string) => {
         listCalls += 1;
         const result = await base.list(logicalPath);
-        if (!logicalPath) releaseFolderRead = beginFolderRead();
+        if (!logicalPath) { releaseFolderRead = beginFolderRead(); markFolderReadStarted(); }
         return result;
       },
     };
 
     const indexing = runIndexMaintenance({ database, storage, maxEntries: 20 });
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await folderReadStarted;
     expect(listCalls).toBe(1);
     releaseFolderRead();
     await expect(indexing).resolves.toMatchObject({ completed: true });
@@ -158,19 +160,22 @@ describe("indexer", () => {
     await fs.writeFile(path.join(root, "note.txt"), "needle");
     const base = createStorageAdapter({ filesRoot: root, dataDirectory: data });
     let releaseFolderRead!: () => void;
+    let markFolderReadStarted!: () => void;
+    const folderReadStarted = new Promise<void>((resolve) => { markFolderReadStarted = resolve; });
     let reads = 0;
     const storage = {
       ...base,
       list: async (logicalPath: string) => {
         const result = await base.list(logicalPath);
         releaseFolderRead = beginFolderRead();
+        markFolderReadStarted();
         return result;
       },
       readFile: async (logicalPath: string) => { reads += 1; return base.readFile(logicalPath); },
     };
 
     const indexing = runIndexMaintenance({ database, storage, maxEntries: 20 });
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await folderReadStarted;
     const readsWhileHeld = reads;
     releaseFolderRead();
     await expect(indexing).resolves.toMatchObject({ completed: true });

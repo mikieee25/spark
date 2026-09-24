@@ -19,7 +19,7 @@ test("administrator can upload, download, recycle, restore, and purge a file", a
   await expect((await download).suggestedFilename()).toBe("e2e-note.txt");
 
   await page.getByRole("button", { name: "Move to Recycle bin" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Move to Recycle bin" }).click();
+  await page.getByRole("dialog", { name: "Move to Recycle bin?" }).getByRole("button", { name: "Move to Recycle bin" }).click();
   await expect(page.getByRole("button", { name: "e2e-note.txt", exact: true })).not.toBeVisible();
 
   await page.getByRole("link", { name: "Recycle bin" }).click();
@@ -30,7 +30,7 @@ test("administrator can upload, download, recycle, restore, and purge a file", a
   await page.goto("/files");
   await page.getByRole("button", { name: "e2e-note.txt", exact: true }).click();
   await page.getByRole("button", { name: "Move to Recycle bin" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Move to Recycle bin" }).click();
+  await page.getByRole("dialog", { name: "Move to Recycle bin?" }).getByRole("button", { name: "Move to Recycle bin" }).click();
   await page.getByRole("link", { name: "Recycle bin" }).click();
   await page.getByRole("button", { name: "Permanently delete" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Permanently delete" }).click();
@@ -39,13 +39,17 @@ test("administrator can upload, download, recycle, restore, and purge a file", a
 
 test("single click opens details and double click opens the folder", async ({ page }) => {
   await signIn(page);
+  await expect(page.getByLabel("Content")).toHaveCSS("overflow", "hidden");
+  await expect(page.getByRole("region", { name: "File list scroll area" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight)).toBe(true);
   await page.getByRole("button", { name: "New folder" }).click();
   await page.getByRole("textbox", { name: "Folder name" }).fill("Double click folder");
   await page.getByRole("button", { name: "Create folder" }).click();
 
   const folder = page.getByRole("button", { name: "Double click folder", exact: true });
   await folder.click();
-  await expect(page.getByRole("complementary", { name: "Selected item details" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Selected item details" })).toBeVisible();
+  await expect(page.locator('[data-slot="sheet-overlay"]')).toBeVisible();
   await page.getByRole("button", { name: "Close details" }).click();
 
   await folder.dblclick();

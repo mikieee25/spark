@@ -30,4 +30,11 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: "Activity" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Administration" })).toBeInTheDocument();
   });
+
+  it("marks the shell regions used to fit the files workspace to the viewport", () => {
+    render(<AppShell user={user}><div data-file-workspace>Workspace</div></AppShell>);
+    expect(screen.getByLabelText("Content")).toHaveAttribute("data-app-main");
+    expect(screen.getByLabelText("Content").closest("[data-app-content]")).toBeInTheDocument();
+    expect(screen.getByLabelText("Content").closest("[data-app-shell]")).toBeInTheDocument();
+  });
 });

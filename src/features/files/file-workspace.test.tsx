@@ -19,6 +19,8 @@ describe("FileWorkspace", () => {
     expect(screen.getByRole("heading", { name: "Shared files" })).toBeInTheDocument();
     expect(screen.getByText("Q3 Energy Outlook.pdf")).toBeInTheDocument();
     expect(screen.getByText("Local-first workspace · OneDrive sync stays external to SPARK")).toBeInTheDocument();
+    expect(screen.getAllByText("3 items")).toHaveLength(1);
+    expect(screen.getByRole("region", { name: "File list scroll area" })).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
   });
 
   it("shows calculated folder sizes", () => {
@@ -184,11 +186,22 @@ describe("FileWorkspace", () => {
 
     const folder = screen.getByRole("button", { name: "Reports" });
     fireEvent.click(folder);
-    expect(await screen.findByRole("complementary", { name: "Selected item details" })).toBeVisible();
+    expect(await screen.findByRole("dialog", { name: "Selected item details" })).toBeVisible();
     expect(fetch).not.toHaveBeenCalled();
 
     fireEvent.doubleClick(folder);
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/files?path=Reports", expect.anything()));
+  });
+
+  it("shows file preview inside the blurred details drawer", async () => {
+    const image = { ...entries[1], name: "DOE seal.png", logicalPath: "DOE seal.png" };
+    render(<FileWorkspace initialPath="" initialEntries={[image]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "DOE seal.png" }));
+
+    expect(await screen.findByRole("dialog", { name: "Selected item details" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Preview of DOE seal.png" })).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="sheet-overlay"]')).toBeInTheDocument();
   });
 
   it("offers all Explorer view modes and sort controls", () => {
@@ -200,7 +213,7 @@ describe("FileWorkspace", () => {
     }
     expect(screen.getByRole("combobox", { name: "Sort by" })).toBeInTheDocument();
     fireEvent.change(screen.getByRole("combobox", { name: "View mode" }), { target: { value: "extra-large-icons" } });
-    expect(screen.getByRole("list", { name: "Workspace files" })).toHaveAttribute("data-view-mode", "extra-large-icons");
+    expect(screen.getByRole("region", { name: "Workspace files" })).toHaveAttribute("data-view-mode", "extra-large-icons");
   });
 
   it("paginates workspace files and sorts entries by size", () => {
