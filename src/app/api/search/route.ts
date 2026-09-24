@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeCapability } from "@/features/access/access-policy";
 import { searchFiles } from "@/features/discovery/search-repository";
+import { getIndexState } from "@/features/discovery/discovery-repository";
 import { getDatabase } from "@/lib/db/runtime";
 import { normalizeLogicalPath } from "@/features/files/path-policy";
 import { recordActivity } from "@/features/activity/activity-repository";
@@ -24,9 +25,12 @@ export async function GET(request: Request): Promise<Response> {
   const parsed = schema.safeParse(params);
   if (!parsed.success) return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400, headers: noStore });
   try {
-    const result = searchFiles(getDatabase(), { query: parsed.data.q, pathPrefix: parsed.data.path, kind: parsed.data.kind, limit: parsed.data.limit, cursor: parsed.data.cursor });
-    if (access.actorType === "anonymous") recordActivity(getDatabase(), { actorType: "anonymous", action: "search", paths: parsed.data.path ? [parsed.data.path] : [], outcome: "success" });
-    return NextResponse.json(result, { headers: noStore });
+    const database = getDatabase();
+    const result = searchFiles(database, { query: parsed.data.q, pathPrefix: parsed.data.path, kind: parsed.data.kind, limit: parsed.data.limit, cursor: parsed.data.cursor });
+    if (access.actorType === "anonymous") recordActivity(database, { actorType: "anonymous", action: "search", paths: parsed.data.path ? [parsed.data.path] : [], outcome: "success" });
+    const state = getIndexState(database);
+    const status = state.status === "running" ? "indexing" : state.status === "error" ? "error" : state.generation === 0 ? "pending" : "ready";
+    return NextResponse.json({ ...result, index: { status } }, { headers: noStore });
   } catch (error) {
     const code = error instanceof Error && ["INVALID_CURSOR", "INVALID_QUERY", "INVALID_PATH"].includes(error.message) ? error.message : "SEARCH_ERROR";
     return NextResponse.json({ error: code }, { status: code === "SEARCH_ERROR" ? 500 : 400, headers: noStore });

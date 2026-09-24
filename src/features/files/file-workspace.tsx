@@ -32,6 +32,7 @@ const AUTO_REFRESH_OPTIONS = [
 ] as const;
 const LARGE_FOLDER_PAGE_SIZE = 200;
 const FOLDER_CACHE_LIMIT = 64;
+const SEARCH_INDEX_REFRESH_MS = 2_000;
 
 function rememberFolder(cache: Map<string, FileEntry[]>, logicalPath: string, entries: FileEntry[]) {
   cache.delete(logicalPath);
@@ -92,7 +93,7 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
   const [searchState, setSearchState] = useState<SearchState>("idle");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchKind, setSearchKind] = useState<SearchKind>("all");
-  const [searchResult, setSearchResult] = useState<SearchFilesResponse>({ items: [], nextCursor: null });
+  const [searchResult, setSearchResult] = useState<SearchFilesResponse>({ items: [], nextCursor: null, index: { status: "ready" } });
   const [folderProgress, setFolderProgress] = useState<{ completed: number; total: number; logicalPath: string } | null>(null);
   const [uploadingFile, setUploadingFile] = useState<string | null>(null);
   const [openingPath, setOpeningPath] = useState<string | null>(null);
@@ -189,6 +190,26 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
       if (!controller.signal.aborted) setSearchState(cause instanceof DOMException && cause.name === "AbortError" ? "idle" : "error");
     }
   }, [currentPath, searchKind]);
+
+  useEffect(() => {
+    if (searchState !== "success" || !searchQuery || !["pending", "indexing"].includes(searchResult.index.status)) return;
+    let refreshing = false;
+    const controller = new AbortController();
+    const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const result = await searchFiles({ query: searchQuery, path: currentPath || undefined, kind: searchKind === "all" ? undefined : searchKind, limit: 25, signal: controller.signal });
+        if (!controller.signal.aborted) setSearchResult(result);
+      } catch {
+        // Keep the last useful results and retry on the next interval.
+      } finally {
+        refreshing = false;
+      }
+    };
+    const timer = window.setInterval(() => void refresh(), SEARCH_INDEX_REFRESH_MS);
+    return () => { window.clearInterval(timer); controller.abort(); };
+  }, [currentPath, searchKind, searchQuery, searchResult.index.status, searchState]);
 
   function submitSearch(query: string, kind: SearchKind) {
     setSearchKind(kind);
@@ -355,7 +376,9 @@ export function FileWorkspace({ initialPath, initialEntries, initialFavorites = 
     <section aria-label="Search results" aria-live="polite">
       {searchState === "loading" && <Card className="shadow-none"><CardContent className="grid gap-3 py-4 sm:grid-cols-3"><Skeleton className="h-14" /><Skeleton className="h-14" /><Skeleton className="h-14" /></CardContent></Card>}
       {searchState === "error" && <Card className="border-destructive/30 shadow-none"><CardContent className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium text-destructive">Search is unavailable right now.</p><p className="text-sm text-muted-foreground">Your current folder remains available.</p></div><Button variant="outline" onClick={() => void performSearch(searchQuery, searchKind)} aria-label="Retry search">Retry</Button></CardContent></Card>}
-      {searchState === "success" && <Card className="shadow-none"><CardHeader><CardTitle className="text-base">Search results</CardTitle><CardDescription>{searchResult.items.length ? `${searchResult.items.length} matches in ${currentPath || "Shared files"}` : "No matches found"}</CardDescription></CardHeader>{searchResult.items.length > 0 && <CardContent><ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{searchResult.items.map((item) => <li key={item.logicalPath}><Button variant="ghost" className="h-auto w-full justify-start gap-3 border px-3 py-3 text-left" onClick={() => selectSearchResult(item)} aria-label={`Open search result ${item.name}`}><FileGlyph entry={item} /><span className="min-w-0"><span className="block truncate font-medium">{item.name}</span><span className="block truncate text-xs text-muted-foreground">{item.kind === "folder" ? "Folder" : "File"} · {item.logicalPath}</span></span></Button></li>)}</ul></CardContent>}</Card>}
+      {searchState === "success" && ["pending", "indexing"].includes(searchResult.index.status) && <Card className="border-primary/20 shadow-none"><CardContent className="flex items-center gap-2 py-3" role="status"><LoaderCircle className="size-4 animate-spin text-primary" aria-hidden="true" /><p className="text-sm text-muted-foreground">Search index is building. Results may be incomplete; this search updates automatically.</p></CardContent></Card>}
+      {searchState === "success" && searchResult.index.status === "error" && <Card className="border-destructive/30 shadow-none"><CardContent className="py-3" role="status"><p className="text-sm text-muted-foreground">Search indexing needs attention. Results may be incomplete.</p></CardContent></Card>}
+      {searchState === "success" && <Card className="shadow-none"><CardHeader><CardTitle className="text-base">Search results</CardTitle><CardDescription>{searchResult.items.length ? `${searchResult.items.length} matches in ${currentPath || "Shared files"}` : ["pending", "indexing"].includes(searchResult.index.status) ? "No indexed matches yet; more may appear as indexing finishes." : searchResult.index.status === "error" ? "Indexing did not finish; results may be incomplete." : "No matches found"}</CardDescription></CardHeader>{searchResult.items.length > 0 && <CardContent><ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{searchResult.items.map((item) => <li key={item.logicalPath}><Button variant="ghost" className="h-auto w-full justify-start gap-3 border px-3 py-3 text-left" onClick={() => selectSearchResult(item)} aria-label={`Open search result ${item.name}`}><FileGlyph entry={item} /><span className="min-w-0"><span className="block truncate font-medium">{item.name}</span><span className="block truncate text-xs text-muted-foreground">{item.kind === "folder" ? "Folder" : "File"} · {item.logicalPath}</span></span></Button></li>)}</ul></CardContent>}</Card>}
     </section>
     {error && <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"><span>{error}</span><span className="flex items-center gap-2"><Button variant="outline" size="sm" onClick={() => void navigateTo(currentPath)} aria-label="Retry folder">Retry</Button><Button variant="ghost" size="icon-sm" onClick={() => setError("")} aria-label="Dismiss error"><X /></Button></span></div>}
     {currentPath && <div><Button variant="outline" onClick={() => void goBack()} aria-label="Go back"><ArrowLeft data-icon="inline-start" />Back to parent folder</Button></div>}

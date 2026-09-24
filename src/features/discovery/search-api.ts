@@ -3,7 +3,7 @@ import type { SearchResult } from "./search-repository";
 import type { Favorite, RecentItem } from "./types";
 
 export type SearchFilesInput = Readonly<{ query: string; path?: string; kind?: "file" | "folder"; limit?: number; cursor?: string; signal?: AbortSignal }>;
-export type SearchFilesResponse = Readonly<{ items: SearchResult[]; nextCursor: string | null }>;
+export type SearchFilesResponse = Readonly<{ items: SearchResult[]; nextCursor: string | null; index: Readonly<{ status: "pending" | "indexing" | "ready" | "error" }> }>;
 
 export async function searchFiles(input: SearchFilesInput): Promise<SearchFilesResponse> {
   const params = new URLSearchParams({ q: input.query });

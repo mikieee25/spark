@@ -67,6 +67,22 @@ describe("storage adapter", () => {
     }
   });
 
+  it("reports root and per-ancestor symlink check timings", async () => {
+    await fs.mkdir(path.join(root, "Reports", "2026"), { recursive: true });
+    const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    let timing: Record<string, unknown> | undefined;
+
+    await storage.list("Reports/2026", { cache: false, onTiming: (value) => { timing = value as Record<string, unknown>; } });
+
+    expect(timing?.symlinkCheck).toEqual(expect.objectContaining({
+      rootLstatMs: expect.any(Number),
+      segmentLstatsMs: expect.any(Number),
+      segmentCount: 2,
+      slowestSegmentLstatMs: expect.any(Number),
+      slowestSegmentIndex: expect.any(Number),
+    }));
+  });
+
   it("reports cache misses and hits without repeating child metadata work", async () => {
     await fs.writeFile(path.join(root, "note.txt"), "note");
     const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });

@@ -10,8 +10,16 @@ export type StorageAdapterConfig = Readonly<{ filesRoot: string; dataDirectory: 
 export type StorageEntry = Readonly<{ name: string; logicalPath: string; kind: "file" | "folder"; sizeBytes: number; modifiedAt: string }>;
 export type StorageStat = StorageEntry;
 export type StagedUpload = Readonly<{ key: string; name: string; sizeBytes: number }>;
+type SymlinkCheckTiming = Readonly<{
+  rootLstatMs: number;
+  segmentLstatsMs: number;
+  segmentCount: number;
+  slowestSegmentLstatMs: number;
+  slowestSegmentIndex: number;
+}>;
 export type StorageListTiming = Readonly<{
   pathValidationMs: number;
+  symlinkCheck: SymlinkCheckTiming;
   directoryStatMs: number;
   cache: "hit" | "miss" | "bypass";
   readdirMs: number;
@@ -69,27 +77,47 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
     return candidate;
   }
 
-  async function assertNoSymlinks(candidate: string): Promise<void> {
+  async function assertNoSymlinks(candidate: string, onTiming?: (timing: SymlinkCheckTiming) => void): Promise<void> {
     const relative = path.relative(root, candidate);
     const segments = relative ? relative.split(path.sep) : [];
     let current = root;
+    const timing = { rootLstatMs: 0, segmentLstatsMs: 0, segmentCount: 0, slowestSegmentLstatMs: 0, slowestSegmentIndex: 0 };
+    const rootStartedAt = performance.now();
     const rootStat = await lstat(root);
+    timing.rootLstatMs = performance.now() - rootStartedAt;
     if (rootStat.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
-    for (const segment of segments) {
+    for (const [index, segment] of segments.entries()) {
       current = path.join(current, segment);
+      const segmentStartedAt = performance.now();
+      let currentStat: Awaited<ReturnType<typeof lstat>>;
       try {
-        const currentStat = await lstat(current);
-        if (currentStat.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
+        currentStat = await lstat(current);
       } catch (error) {
+        const elapsedMs = performance.now() - segmentStartedAt;
+        timing.segmentLstatsMs += elapsedMs;
+        timing.segmentCount += 1;
+        if (elapsedMs > timing.slowestSegmentLstatMs) {
+          timing.slowestSegmentLstatMs = elapsedMs;
+          timing.slowestSegmentIndex = index + 1;
+        }
         if (isMissing(error)) break;
         throw error;
       }
+      const elapsedMs = performance.now() - segmentStartedAt;
+      timing.segmentLstatsMs += elapsedMs;
+      timing.segmentCount += 1;
+      if (elapsedMs > timing.slowestSegmentLstatMs) {
+        timing.slowestSegmentLstatMs = elapsedMs;
+        timing.slowestSegmentIndex = index + 1;
+      }
+      if (currentStat.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
     }
+    onTiming?.(timing);
   }
 
-  async function resolveExisting(logicalPath: string): Promise<string> {
+  async function resolveExisting(logicalPath: string, onSymlinkTiming?: (timing: SymlinkCheckTiming) => void): Promise<string> {
     const candidate = resolveLogical(logicalPath);
-    await assertNoSymlinks(candidate);
+    await assertNoSymlinks(candidate, onSymlinkTiming);
     return candidate;
   }
 
@@ -153,7 +181,8 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
 
   async function loadDirectoryList(logicalPath: string, useCache: boolean, onTiming?: (timing: StorageListTiming) => void): Promise<StorageEntry[]> {
     const resolveStartedAt = performance.now();
-    const directory = await resolveExisting(logicalPath);
+    let symlinkCheck: SymlinkCheckTiming | undefined;
+    const directory = await resolveExisting(logicalPath, (timing) => { symlinkCheck = timing; });
     const resolveMs = performance.now() - resolveStartedAt;
     const directoryStartedAt = performance.now();
     const directoryStat = await statAsync(directory);
@@ -162,7 +191,7 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
     const fingerprint = String(directoryStat.mtimeMs);
     const cached = useCache ? listCache.get(logicalPath, fingerprint) : undefined;
     if (cached) {
-      onTiming?.({ pathValidationMs: resolveMs, directoryStatMs: directoryMs, cache: "hit", readdirMs: 0, metadataMs: 0, sortMs: 0, entryCount: cached.length });
+      onTiming?.({ pathValidationMs: resolveMs, symlinkCheck: symlinkCheck!, directoryStatMs: directoryMs, cache: "hit", readdirMs: 0, metadataMs: 0, sortMs: 0, entryCount: cached.length });
       return cached;
     }
     const readdirStartedAt = performance.now();
@@ -189,7 +218,7 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
     const sortStartedAt = performance.now();
     const sorted = result.sort((left, right) => Number(right.kind === "folder") - Number(left.kind === "folder") || left.name.localeCompare(right.name));
     const sortMs = performance.now() - sortStartedAt;
-    onTiming?.({ pathValidationMs: resolveMs, directoryStatMs: directoryMs, cache: useCache ? "miss" : "bypass", readdirMs, metadataMs, sortMs, entryCount: sorted.length });
+    onTiming?.({ pathValidationMs: resolveMs, symlinkCheck: symlinkCheck!, directoryStatMs: directoryMs, cache: useCache ? "miss" : "bypass", readdirMs, metadataMs, sortMs, entryCount: sorted.length });
     if (useCache) listCache.set(logicalPath, fingerprint, sorted);
     return sorted;
   }

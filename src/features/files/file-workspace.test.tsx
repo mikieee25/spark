@@ -27,7 +27,7 @@ describe("FileWorkspace", () => {
   });
 
   it("filters files by search term", () => {
-    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ items: [], nextCursor: null, index: { status: "ready" } }), { status: 200 }));
     render(<FileWorkspace initialPath="" initialEntries={entries} initialFavorites={[]} initialRecent={[]} />);
     const input = screen.getByRole("searchbox", { name: "Search workspace" });
     fireEvent.change(input, { target: { value: "budget" } });
@@ -39,6 +39,7 @@ describe("FileWorkspace", () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({
       items: [{ name: "Reports", logicalPath: "Reports", kind: "folder", sizeBytes: 0, modifiedAt: "2026-09-22T00:00:00.000Z", extension: "", mimeType: "" }],
       nextCursor: null,
+      index: { status: "ready" },
     }), { status: 200 }));
     render(<FileWorkspace initialPath="" initialEntries={entries} />);
     fireEvent.change(screen.getByRole("combobox", { name: "Search item type" }), { target: { value: "folder" } });
@@ -57,19 +58,32 @@ describe("FileWorkspace", () => {
     fireEvent.change(input, { target: { value: "brief" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.getByText("Searching…")).toBeInTheDocument();
-    resolveSearch(new Response(JSON.stringify({ items: [{ name: "brief.txt", logicalPath: "Reports/brief.txt", kind: "file", sizeBytes: 20, modifiedAt: "2026-09-22T00:00:00.000Z", extension: ".txt", mimeType: "text/plain" }], nextCursor: null }), { status: 200 }));
+    resolveSearch(new Response(JSON.stringify({ items: [{ name: "brief.txt", logicalPath: "Reports/brief.txt", kind: "file", sizeBytes: 20, modifiedAt: "2026-09-22T00:00:00.000Z", extension: ".txt", mimeType: "text/plain" }], nextCursor: null, index: { status: "ready" } }), { status: 200 }));
     expect(await screen.findByRole("button", { name: /Open search result brief\.txt/i })).toBeInTheDocument();
 
-    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ items: [], nextCursor: null, index: { status: "ready" } }), { status: 200 }));
     fireEvent.change(input, { target: { value: "missing" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(await screen.findByText("No matches found")).toBeInTheDocument();
   });
 
+  it("labels incomplete search results and refreshes until indexing finishes", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [], nextCursor: null, index: { status: "pending" } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ name: "search-fixture.txt", logicalPath: "search-fixture.txt", kind: "file", sizeBytes: 28, modifiedAt: "2026-09-22T00:00:00.000Z", extension: ".txt", mimeType: "text/plain" }], nextCursor: null, index: { status: "ready" } }), { status: 200 }));
+    render(<FileWorkspace initialPath="" initialEntries={entries} initialFavorites={[]} initialRecent={[]} />);
+    const input = screen.getByRole("searchbox", { name: "Search workspace" });
+    fireEvent.change(input, { target: { value: "search fixture" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(await screen.findByText(/Search index is building/i)).toBeInTheDocument();
+    expect(screen.queryByText("No matches found")).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Open search result search-fixture\.txt/i }, { timeout: 5_000 })).toBeInTheDocument();
+  });
+
   it("shows search errors and retries the same query", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: "SEARCH_ERROR" }), { status: 500 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [], nextCursor: null, index: { status: "ready" } }), { status: 200 }));
     render(<FileWorkspace initialPath="" initialEntries={entries} initialFavorites={[]} initialRecent={[]} />);
     const input = screen.getByRole("searchbox", { name: "Search workspace" });
     fireEvent.change(input, { target: { value: "brief" } });

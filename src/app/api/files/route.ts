@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authorizeCapability } from "@/features/access/access-policy";
 import { hasValidMutationOrigin } from "@/features/auth/origin";
 import { getFileService } from "@/features/files/file-runtime";
+import type { StorageListTiming } from "@/features/files/storage-adapter";
 import { addRecentItem } from "@/features/discovery/discovery-repository";
 import { getDatabase } from "@/lib/db/runtime";
 import { recordActivity } from "@/features/activity/activity-repository";
@@ -32,7 +33,7 @@ export async function GET(request: Request): Promise<Response> {
   if (!parsed.success) return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400, headers: noStore });
   try {
     const listStartedAt = performance.now();
-    let listTiming: { pathValidationMs: number; directoryStatMs: number; cache: "hit" | "miss" | "bypass"; readdirMs: number; metadataMs: number; sortMs: number; entryCount: number } | undefined;
+    let listTiming: StorageListTiming | undefined;
     const entries = await getFileService().list(parsed.data, { onTiming: (timing) => { listTiming = timing; } });
     const listMs = performance.now() - listStartedAt;
     const recentStartedAt = performance.now();
@@ -40,7 +41,7 @@ export async function GET(request: Request): Promise<Response> {
     else recordActivity(getDatabase(), { actorType: "anonymous", action: "browse", paths: [parsed.data], outcome: "success" });
     const recentMs = performance.now() - recentStartedAt;
     const totalMs = performance.now() - startedAt;
-    const phaseTiming = listTiming ? `path;dur=${listTiming.pathValidationMs.toFixed(1)}, directory;dur=${listTiming.directoryStatMs.toFixed(1)}, readdir;dur=${listTiming.readdirMs.toFixed(1)}, metadata;dur=${listTiming.metadataMs.toFixed(1)}, sort;dur=${listTiming.sortMs.toFixed(1)}, ` : "";
+    const phaseTiming = listTiming ? `path;dur=${listTiming.pathValidationMs.toFixed(1)}, root-lstat;dur=${listTiming.symlinkCheck.rootLstatMs.toFixed(1)}, segment-lstats;dur=${listTiming.symlinkCheck.segmentLstatsMs.toFixed(1)}, segment-count;desc="${listTiming.symlinkCheck.segmentCount}", slowest-segment-lstat;dur=${listTiming.symlinkCheck.slowestSegmentLstatMs.toFixed(1)}, slowest-segment-index;desc="${listTiming.symlinkCheck.slowestSegmentIndex}", directory;dur=${listTiming.directoryStatMs.toFixed(1)}, readdir;dur=${listTiming.readdirMs.toFixed(1)}, metadata;dur=${listTiming.metadataMs.toFixed(1)}, sort;dur=${listTiming.sortMs.toFixed(1)}, ` : "";
     const serverTiming = `auth;dur=${authMs.toFixed(1)}, ${phaseTiming}list;dur=${listMs.toFixed(1)}, recent;dur=${recentMs.toFixed(1)}, total;dur=${totalMs.toFixed(1)}`;
     return NextResponse.json({ path: parsed.data, entries }, { headers: { ...noStore, "Server-Timing": serverTiming } });
   } catch (error) {
