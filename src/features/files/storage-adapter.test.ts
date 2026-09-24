@@ -83,6 +83,26 @@ describe("storage adapter", () => {
     }));
   });
 
+  it("checks the configured root once per adapter but still checks each path segment", async () => {
+    await fs.mkdir(path.join(root, "Reports", "2026"), { recursive: true });
+    const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    const timings: Array<Record<string, unknown>> = [];
+
+    await storage.list("Reports", { cache: false, onTiming: (value) => timings.push(value as unknown as Record<string, unknown>) });
+    await storage.list("Reports/2026", { cache: false, onTiming: (value) => timings.push(value as unknown as Record<string, unknown>) });
+
+    expect(timings[0].symlinkCheck).toEqual(expect.objectContaining({ rootLstatMs: expect.any(Number), segmentCount: 1 }));
+    expect(timings[1].symlinkCheck).toEqual(expect.objectContaining({ rootLstatMs: 0, segmentCount: 2 }));
+  });
+
+  it("rejects a symlinked configured root", async () => {
+    const linkedRoot = path.join(data, "linked-root");
+    await fs.symlink(root, linkedRoot, "junction");
+    const storage = createStorageAdapter({ filesRoot: linkedRoot, dataDirectory: data });
+
+    await expect(storage.list("")).rejects.toThrow("SYMLINK_NOT_ALLOWED");
+  });
+
   it("reports cache misses and hits without repeating child metadata work", async () => {
     await fs.writeFile(path.join(root, "note.txt"), "note");
     const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });

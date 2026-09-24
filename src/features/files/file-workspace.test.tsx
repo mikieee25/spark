@@ -97,7 +97,7 @@ describe("FileWorkspace", () => {
     let resolveListing!: (value: Response) => void;
     vi.mocked(fetch).mockImplementationOnce(() => new Promise((resolve) => { resolveListing = resolve; }));
     render(<FileWorkspace initialPath="" initialEntries={entries} />);
-    fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+    fireEvent.doubleClick(screen.getByRole("button", { name: "Reports" }));
     expect(screen.getByRole("link", { name: "Reports" })).toBeInTheDocument();
     expect(screen.getByRole("status", { name: "Opening folder" })).toBeInTheDocument();
     expect(screen.getByRole("status", { name: "Loading folder contents" })).toBeInTheDocument();
@@ -134,7 +134,7 @@ describe("FileWorkspace", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ path: "", entries }), { status: 200 }));
     render(<FileWorkspace initialPath="" initialEntries={entries} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+    fireEvent.doubleClick(screen.getByRole("button", { name: "Reports" }));
     fireEvent.click(screen.getByRole("button", { name: "Go back" }));
     expect(screen.getByText("Q3 Energy Outlook.pdf")).toBeInTheDocument();
 
@@ -158,7 +158,7 @@ describe("FileWorkspace", () => {
     });
     render(<FileWorkspace initialPath="" initialEntries={entries} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+    fireEvent.doubleClick(screen.getByRole("button", { name: "Reports" }));
     expect(await screen.findByText("Brief.pdf")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Go back" }));
 
@@ -171,9 +171,64 @@ describe("FileWorkspace", () => {
   it("navigates to the parent folder with the back button", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ path: "Reports", entries: [entries[0]] }), { status: 200 }));
     render(<FileWorkspace initialPath="Reports/2026" initialEntries={entries} />);
+    expect(screen.getByRole("button", { name: "Go back" })).toHaveTextContent("Back");
+    expect(screen.getByRole("button", { name: "Go back" })).not.toHaveTextContent("parent folder");
     fireEvent.click(screen.getByRole("button", { name: "Go back" }));
     expect(await screen.findByRole("link", { name: "Reports" })).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith("/api/files?path=Reports", expect.anything());
+  });
+
+  it("selects an item on single click and opens its folder on double click", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => new Response(JSON.stringify(String(input).startsWith("/api/discovery/recent") ? { items: [] } : { path: "Reports", entries: [] }), { status: 200 }));
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+
+    const folder = screen.getByRole("button", { name: "Reports" });
+    fireEvent.click(folder);
+    expect(await screen.findByRole("complementary", { name: "Selected item details" })).toBeVisible();
+    expect(fetch).not.toHaveBeenCalled();
+
+    fireEvent.doubleClick(folder);
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/files?path=Reports", expect.anything()));
+  });
+
+  it("offers all Explorer view modes and sort controls", () => {
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+
+    expect(screen.getByRole("combobox", { name: "View mode" })).toHaveValue("details");
+    for (const mode of ["Extra large icons", "Large icons", "Medium icons", "Small icons", "List", "Details", "Tiles", "Content"]) {
+      expect(screen.getByRole("option", { name: mode })).toBeInTheDocument();
+    }
+    expect(screen.getByRole("combobox", { name: "Sort by" })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "View mode" }), { target: { value: "extra-large-icons" } });
+    expect(screen.getByRole("list", { name: "Workspace files" })).toHaveAttribute("data-view-mode", "extra-large-icons");
+  });
+
+  it("paginates workspace files and sorts entries by size", () => {
+    const manyEntries = Array.from({ length: 51 }, (_, index) => ({ ...entries[1], name: `File ${index + 1}.txt`, logicalPath: `File ${index + 1}.txt`, sizeBytes: 52 - index }));
+    render(<FileWorkspace initialPath="" initialEntries={manyEntries} />);
+
+    expect(screen.getByRole("button", { name: "File 1.txt" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "File 51.txt" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("button", { name: "File 51.txt" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "File 1.txt" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort by" }), { target: { value: "size" } });
+    expect(screen.getByRole("button", { name: "File 51.txt" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "File 1.txt" })).not.toBeInTheDocument();
+  });
+
+  it("opens file actions on right click and provides new-tab and new-window options", () => {
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+    const openWindow = vi.spyOn(window, "open").mockReturnValue(null);
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Reports" }));
+
+    expect(screen.getByRole("menuitem", { name: "Open in new tab" })).toHaveAttribute("href", "/files?path=Reports");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open in new window" }));
+    expect(openWindow).toHaveBeenCalledWith("/files?path=Reports", "_blank", "popup,width=1200,height=800,noopener,noreferrer");
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Q3 Energy Outlook.pdf" }));
+    expect(screen.getByRole("menuitem", { name: "Open in new tab" })).toHaveAttribute("href", "/files?preview=Q3%20Energy%20Outlook.pdf");
   });
 
   it("refreshes the current folder at the selected interval", async () => {
@@ -201,7 +256,7 @@ describe("FileWorkspace", () => {
       fireEvent.change(screen.getByLabelText("Auto-refresh interval"), { target: { value: "15" } });
       await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
 
-      fireEvent.click(screen.getByRole("button", { name: "Reports" }));
+      fireEvent.doubleClick(screen.getByRole("button", { name: "Reports" }));
       await act(async () => { await Promise.resolve(); await Promise.resolve(); });
       expect(screen.getByText("Brief.pdf")).toBeInTheDocument();
       resolveRefresh(new Response(JSON.stringify({ path: "", entries: [{ ...entries[1], name: "Stale root.pdf" }] }), { status: 200 }));
@@ -219,7 +274,7 @@ describe("FileWorkspace", () => {
     render(<FileWorkspace initialPath="" initialEntries={entries} initialFavorites={[]} initialRecent={[{ userId: "u1", logicalPath: "Reports/brief.txt", accessedAt: "2026-09-22T00:00:00.000Z" }]} />);
     expect(screen.getByRole("button", { name: /Open recent item brief\.txt/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Q3 Energy Outlook.pdf" }));
-    fireEvent.click(screen.getByRole("button", { name: "Add to favorites" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add to favorites" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/discovery/favorites", expect.objectContaining({ method: "PUT" })));
   });
 
@@ -257,6 +312,7 @@ describe("FileWorkspace", () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
     render(<FileWorkspace initialPath="" initialEntries={entries} />);
     fireEvent.click(screen.getByRole("button", { name: "Q3 Energy Outlook.pdf" }));
+    await screen.findByRole("button", { name: "Move to Recycle bin" });
     fireEvent.click(screen.getByRole("button", { name: "Move to Recycle bin" }));
     expect(screen.getByRole("dialog")).toBeVisible();
     const recycleButtons = screen.getAllByRole("button", { name: "Move to Recycle bin" });

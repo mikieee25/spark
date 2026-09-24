@@ -34,6 +34,18 @@ describe("user management", () => {
     expect(screen.getByRole("button", { name: "Create account" })).toHaveAttribute("type", "submit");
   });
 
+  it("paginates account records", async () => {
+    const users = Array.from({ length: 26 }, (_, index) => ({ id: `user-${index + 1}`, username: `user${index + 1}`, displayName: `User ${index + 1}`, role: "user" as const, disabledAt: null, mustChangePassword: false }));
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ users }), { status: 200 }));
+    render(<UserManagement />);
+
+    expect(await screen.findByText("User 1")).toBeInTheDocument();
+    expect(screen.queryByText("User 26")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("User 26")).toBeInTheDocument();
+    expect(screen.queryByText("User 1")).not.toBeInTheDocument();
+  });
+
   it("confirms and saves an administrator role change", async () => {
     const user = { id: "user-1", username: "alex", displayName: "Alex", role: "user", disabledAt: null, mustChangePassword: false };
     vi.mocked(fetch)

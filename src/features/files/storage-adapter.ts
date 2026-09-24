@@ -70,6 +70,8 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
   const dataDirectory = path.resolve(config.dataDirectory);
   const listCache = createDirectoryListCache<StorageEntry[]>({ ttlMs: 3_000, maxEntries: 128 });
   const inFlightLists = new Map<string, Promise<StorageEntry[]>>();
+  // The configured mount root is fixed for this adapter's lifetime; descendants are still checked per request.
+  let rootValidation: Promise<void> | undefined;
   function resolveLogical(logicalPath: string): string {
     const normalized = normalizeLogicalPath(logicalPath);
     const candidate = path.resolve(root, ...normalized ? normalized.split("/") : []);
@@ -82,10 +84,19 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
     const segments = relative ? relative.split(path.sep) : [];
     let current = root;
     const timing = { rootLstatMs: 0, segmentLstatsMs: 0, segmentCount: 0, slowestSegmentLstatMs: 0, slowestSegmentIndex: 0 };
-    const rootStartedAt = performance.now();
-    const rootStat = await lstat(root);
-    timing.rootLstatMs = performance.now() - rootStartedAt;
-    if (rootStat.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
+    if (!rootValidation) {
+      const rootStartedAt = performance.now();
+      rootValidation = lstat(root).then((rootStat) => {
+        if (rootStat.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
+      }).catch((error: unknown) => {
+        rootValidation = undefined;
+        throw error;
+      });
+      await rootValidation;
+      timing.rootLstatMs = performance.now() - rootStartedAt;
+    } else {
+      await rootValidation;
+    }
     for (const [index, segment] of segments.entries()) {
       current = path.join(current, segment);
       const segmentStartedAt = performance.now();

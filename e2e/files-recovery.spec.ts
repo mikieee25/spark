@@ -36,3 +36,18 @@ test("administrator can upload, download, recycle, restore, and purge a file", a
   await page.getByRole("dialog").getByRole("button", { name: "Permanently delete" }).click();
   await expect(page.getByText("e2e-note.txt", { exact: true })).not.toBeVisible();
 });
+
+test("single click opens details and double click opens the folder", async ({ page }) => {
+  await signIn(page);
+  await page.getByRole("button", { name: "New folder" }).click();
+  await page.getByRole("textbox", { name: "Folder name" }).fill("Double click folder");
+  await page.getByRole("button", { name: "Create folder" }).click();
+
+  const folder = page.getByRole("button", { name: "Double click folder", exact: true });
+  await folder.click();
+  await expect(page.getByRole("complementary", { name: "Selected item details" })).toBeVisible();
+  await page.getByRole("button", { name: "Close details" }).click();
+
+  await folder.dblclick();
+  await expect(page.getByRole("link", { name: "Double click folder", exact: true })).toBeVisible();
+});

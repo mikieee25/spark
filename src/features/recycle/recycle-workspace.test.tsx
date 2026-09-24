@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RecycleWorkspace } from "./recycle-workspace";
 
@@ -11,6 +11,17 @@ describe("RecycleWorkspace", () => {
     render(<RecycleWorkspace entries={[entry]} userRole="user" />);
     expect(screen.getByText("Reports/old.txt")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Permanently delete" })).not.toBeInTheDocument();
+  });
+
+  it("paginates recoverable items so only one page is shown at a time", () => {
+    const entries = Array.from({ length: 26 }, (_, index) => ({ ...entry, id: `entry-${index + 1}`, originalPath: `Reports/file-${index + 1}.txt` }));
+    render(<RecycleWorkspace entries={entries} userRole="user" />);
+
+    expect(screen.getByText("Reports/file-1.txt")).toBeInTheDocument();
+    expect(screen.queryByText("Reports/file-26.txt")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Reports/file-26.txt")).toBeInTheDocument();
+    expect(screen.queryByText("Reports/file-1.txt")).not.toBeInTheDocument();
   });
 
   it("offers an explicit replace choice when restore encounters a conflict", async () => {
