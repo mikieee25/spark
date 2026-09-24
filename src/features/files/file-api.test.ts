@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { uploadFolder } from "./file-api";
+import { downloadSelection, recycleSelection, uploadFolder } from "./file-api";
 
 beforeEach(() => vi.stubGlobal("fetch", vi.fn()));
 
@@ -23,5 +23,24 @@ describe("uploadFolder", () => {
     const file = new File(["DOE"], "brief.txt", { type: "text/plain" });
     await expect(uploadFolder({ directory: "", files: [file], signal: controller.signal })).rejects.toMatchObject({ code: "UPLOAD_CANCELLED" });
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("batch file actions", () => {
+  it("downloads selected paths as a ZIP request", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response("zip", { status: 200, headers: { "Content-Type": "application/zip" } }));
+
+    await expect(downloadSelection(["Reports", "note.txt"])).resolves.toBeInstanceOf(Blob);
+
+    expect(fetch).toHaveBeenCalledWith("/api/files/batch", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ action: "download", paths: ["Reports", "note.txt"] }),
+    }));
+  });
+
+  it("returns per-item recycle outcomes", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ succeeded: ["note.txt"], failed: [] }), { status: 200 }));
+
+    await expect(recycleSelection(["note.txt"])).resolves.toEqual({ succeeded: ["note.txt"], failed: [] });
   });
 });

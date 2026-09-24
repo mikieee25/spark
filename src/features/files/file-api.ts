@@ -33,6 +33,32 @@ export async function deleteFile(path: string): Promise<unknown> {
   return jsonRequest(`/api/files?path=${encodeURIComponent(path)}`, { method: "DELETE" });
 }
 
+export type BatchRecycleResult = Readonly<{
+  succeeded: string[];
+  failed: Array<{ path: string; error: string }>;
+}>;
+
+async function batchRequest(action: "download" | "recycle", paths: readonly string[]): Promise<Response> {
+  const response = await fetch("/api/files/batch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, paths }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { error?: string };
+    throw new FileApiError(body.error ?? "FILESYSTEM_ERROR", response.status);
+  }
+  return response;
+}
+
+export async function downloadSelection(paths: readonly string[]): Promise<Blob> {
+  return (await batchRequest("download", paths)).blob();
+}
+
+export async function recycleSelection(paths: readonly string[]): Promise<BatchRecycleResult> {
+  return await (await batchRequest("recycle", paths)).json() as BatchRecycleResult;
+}
+
 export async function moveFile(input: { source: string; destination: string; conflict?: ConflictPolicy }): Promise<unknown> {
   return jsonRequest("/api/files", { method: "PATCH", body: JSON.stringify(input) });
 }

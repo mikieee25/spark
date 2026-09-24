@@ -14,7 +14,7 @@ import { SearchBar, type SearchKind } from "@/features/discovery/search-bar";
 import { listRecent, searchFiles, setFavorite, type SearchFilesResponse } from "@/features/discovery/search-api";
 import type { SearchResult } from "@/features/discovery/search-repository";
 import type { Favorite, RecentItem } from "@/features/discovery/types";
-import { createFolder, deleteFile, downloadUrl, FileApiError, listFiles, moveFile, uploadFile, uploadFolder, type ConflictPolicy, type FileEntry } from "./file-api";
+import { createFolder, deleteFile, downloadSelection, downloadUrl, FileApiError, listFiles, moveFile, recycleSelection, uploadFile, uploadFolder, type ConflictPolicy, type FileEntry } from "./file-api";
 import { WorkspaceFileList } from "./workspace-file-list";
 
 type SelectedItem = FileEntry & { mimeType?: string };
@@ -81,6 +81,11 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
   const [renameName, setRenameName] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [batchSelection, setBatchSelection] = useState<Set<string>>(() => new Set());
+  const [batchRecycleOpen, setBatchRecycleOpen] = useState(false);
+  const [batchBusy, setBatchBusy] = useState<"download" | "recycle" | null>(null);
+  const [batchMessage, setBatchMessage] = useState("");
+  const [batchMessageIsError, setBatchMessageIsError] = useState(false);
   const [favorites, setFavorites] = useState(initialFavorites);
   const [recent, setRecent] = useState(initialRecent);
   const [searchState, setSearchState] = useState<SearchState>("idle");
@@ -102,6 +107,8 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
   const navigationController = useRef<AbortController>(null);
   const navigationSequence = useRef(0);
   const folderCache = useRef(new Map<string, FileEntry[]>(initialEntries ? [[initialPath, initialEntries]] : []));
+  const selectedBatchEntries = entries.filter((entry) => batchSelection.has(entry.logicalPath));
+  const activeBatchSelection = new Set(selectedBatchEntries.map((entry) => entry.logicalPath));
 
   useEffect(() => () => {
     searchController.current?.abort();
@@ -226,6 +233,8 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
     setEntries(cached ?? []);
     setSearchState("idle");
     setSelected(null);
+    setBatchSelection(new Set());
+    setBatchMessage("");
     try {
       const result = await listFiles(logicalPath, controller.signal);
       if (controller.signal.aborted || sequence !== navigationSequence.current) return;
@@ -342,6 +351,78 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
     if (folderConflict) resolveFolderConflict("cancel");
   }
 
+  function toggleBatchItem(path: string, selected: boolean) {
+    setBatchMessage("");
+    setBatchSelection((current) => {
+      const next = new Set(current);
+      if (selected) next.add(path);
+      else next.delete(path);
+      return next;
+    });
+  }
+
+  function toggleAllBatchItems(selected: boolean) {
+    setBatchMessage("");
+    setBatchSelection(selected ? new Set(entries.map((entry) => entry.logicalPath)) : new Set());
+  }
+
+  async function submitBatchDownload() {
+    const paths = selectedBatchEntries.map((entry) => entry.logicalPath);
+    if (!paths.length) return;
+    setBatchBusy("download");
+    setBatchMessage("");
+    try {
+      const blob = await downloadSelection(paths);
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = "spark-selected-files.zip";
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+      setBatchMessage(`Downloaded ${paths.length} items as a ZIP.`);
+      setBatchMessageIsError(false);
+    } catch (cause) {
+      setBatchMessage(cause instanceof Error ? cause.message : "Unable to download selected items.");
+      setBatchMessageIsError(true);
+    } finally {
+      setBatchBusy(null);
+    }
+  }
+
+  async function submitBatchRecycle() {
+    const paths = selectedBatchEntries.map((entry) => entry.logicalPath);
+    if (!paths.length) return;
+    setBatchBusy("recycle");
+    setBatchMessage("");
+    try {
+      const result = await recycleSelection(paths);
+      const succeeded = new Set(result.succeeded);
+      setEntries((current) => {
+        const next = current.filter((entry) => !succeeded.has(entry.logicalPath));
+        rememberFolder(folderCache.current, currentPath, next);
+        return next;
+      });
+      setFavorites((current) => current.filter((favorite) => !succeeded.has(favorite.logicalPath)));
+      setBatchSelection(new Set(result.failed.map((item) => item.path)));
+      setBatchRecycleOpen(false);
+      const moved = `${result.succeeded.length} item${result.succeeded.length === 1 ? "" : "s"} moved to Recycle bin`;
+      if (result.failed.length) {
+        setBatchMessage(`${moved}; ${result.failed.length} failed: ${result.failed.map((item) => `${item.path} (${item.error})`).join(", ")}`);
+        setBatchMessageIsError(true);
+      } else {
+        setBatchMessage(`${moved}.`);
+        setBatchMessageIsError(false);
+      }
+    } catch (cause) {
+      setBatchMessage(cause instanceof Error ? cause.message : "Unable to recycle selected items.");
+      setBatchMessageIsError(true);
+    } finally {
+      setBatchBusy(null);
+    }
+  }
+
   async function submitDelete() {
     if (!selected) return;
     try { await deleteFile(selected.logicalPath); setEntries((current) => { const next = current.filter((entry) => entry.logicalPath !== selected.logicalPath); rememberFolder(folderCache.current, currentPath, next); return next; }); setFavorites((current) => current.filter((favorite) => favorite.logicalPath !== selected.logicalPath)); setSelected(null); setDeleteOpen(false); setNotice(`${selected.name} moved to Recycle bin.`); }
@@ -384,13 +465,14 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
           </div>
         </CardHeader>
         <CardContent className="flex min-h-0 flex-1 flex-col overflow-hidden p-0">
-          {folderLoading ? <div role="status" aria-label="Loading folder contents" className="grid min-h-72 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3"><Skeleton className="h-20" /><Skeleton className="h-20" /><Skeleton className="h-20" /></div> : entries.length === 0 ? <div className="flex min-h-72 flex-col items-center justify-center gap-3 p-8 text-center"><Folder className="size-8 text-muted-foreground" /><h2 className="font-semibold">This folder is empty</h2><p className="text-sm text-muted-foreground">Create a folder or upload a file to begin.</p></div> : <WorkspaceFileList entries={entries} selectedPath={selected?.logicalPath ?? null} onSelect={setSelected} onOpen={(entry) => void openFolder(entry)} onRename={(entry) => { setSelected(entry); setRenameName(entry.name); setRenameOpen(true); }} onDelete={(entry) => { setSelected(entry); setDeleteOpen(true); }} onToggleFavorite={(entry) => void toggleFavorite(entry)} isFavorite={(logicalPath) => favorites.some((favorite) => favorite.logicalPath === logicalPath)} />}
+          {folderLoading ? <div role="status" aria-label="Loading folder contents" className="grid min-h-72 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3"><Skeleton className="h-20" /><Skeleton className="h-20" /><Skeleton className="h-20" /></div> : entries.length === 0 ? <div className="flex min-h-72 flex-col items-center justify-center gap-3 p-8 text-center"><Folder className="size-8 text-muted-foreground" /><h2 className="font-semibold">This folder is empty</h2><p className="text-sm text-muted-foreground">Create a folder or upload a file to begin.</p></div> : <WorkspaceFileList entries={entries} selectedPath={selected?.logicalPath ?? null} selectedPaths={activeBatchSelection} batchBusy={batchBusy} batchMessage={batchMessage} batchMessageIsError={batchMessageIsError} onSelect={setSelected} onOpen={(entry) => void openFolder(entry)} onRename={(entry) => { setSelected(entry); setRenameName(entry.name); setRenameOpen(true); }} onDelete={(entry) => { setSelected(entry); setDeleteOpen(true); }} onToggleFavorite={(entry) => void toggleFavorite(entry)} onToggleSelection={toggleBatchItem} onToggleAllSelection={toggleAllBatchItems} onDownloadSelected={() => void submitBatchDownload()} onRecycleSelected={() => setBatchRecycleOpen(true)} isFavorite={(logicalPath) => favorites.some((favorite) => favorite.logicalPath === logicalPath)} />}
         </CardContent>
       </Card>
       <aside aria-label="Discovery shortcuts" className="grid min-h-0 content-start gap-4 overflow-y-auto sm:grid-cols-2 lg:grid-cols-1"><DiscoveryList title="Favorites" icon={Star} items={favorites} empty="Favorite important files and folders for quick access." onSelect={selectPath} /><DiscoveryList title="Recent items" icon={Clock3} items={recent} empty="Files and folders you open will appear here." onSelect={selectPath} /></aside>
     </div>
     <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed bg-muted/20 px-4 py-3 text-xs text-muted-foreground"><span>Local-first workspace · OneDrive sync stays external to SPARK</span><span className="flex items-center gap-3" aria-live="polite">{folderProgress ? `Uploading ${folderProgress.completed} of ${folderProgress.total}: ${baseName(folderProgress.logicalPath)}` : uploadingFile ? `Uploading ${uploadingFile}…` : notice}{(folderProgress || uploadingFile) && <Button variant="outline" size="sm" onClick={cancelUpload}>Cancel upload</Button>}</span></div>
     <Dialog open={newFolderOpen} onOpenChange={setNewFolderOpen}><DialogContent><DialogHeader><DialogTitle>Create a folder</DialogTitle><DialogDescription>The folder will be created in the current workspace.</DialogDescription></DialogHeader><Input autoFocus value={folderName} onChange={(event) => setFolderName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void submitFolder(); }} placeholder="Folder name" aria-label="Folder name" /><DialogFooter><Button variant="outline" onClick={() => setNewFolderOpen(false)}>Cancel</Button><Button onClick={() => void submitFolder()} disabled={!folderName.trim()}>Create folder</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={batchRecycleOpen} onOpenChange={setBatchRecycleOpen}><DialogContent><DialogHeader><DialogTitle>Move {selectedBatchEntries.length} items to Recycle bin?</DialogTitle><DialogDescription>The selected files and folders can be restored from the Recycle bin.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setBatchRecycleOpen(false)}>Cancel</Button><Button variant="destructive" onClick={() => void submitBatchRecycle()} disabled={batchBusy !== null}>Move {selectedBatchEntries.length} items to Recycle bin</Button></DialogFooter></DialogContent></Dialog>
     <Sheet open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelected(null); }}>
       {selected && <SheetContent aria-label="Selected item details" side="right" showCloseButton={false} className="w-full gap-0 overflow-y-auto p-0 sm:w-3/4 sm:!max-w-xl max-sm:inset-x-0 max-sm:inset-y-auto max-sm:top-auto max-sm:bottom-0 max-sm:h-[85dvh] max-sm:w-full max-sm:max-w-none max-sm:rounded-t-2xl max-sm:border-l-0 max-sm:border-t">
         <SheetHeader className="shrink-0 flex-row items-start justify-between gap-4 border-b px-4 py-4">

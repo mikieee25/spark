@@ -2,10 +2,10 @@
 import { describe, expect, it } from "vitest";
 import { unzipSync } from "fflate";
 import type { StorageAdapter } from "./storage-adapter";
-import { createFolderArchive } from "./folder-download";
+import { createFolderArchive, createSelectionArchive } from "./folder-download";
 
 function storageFixture(): StorageAdapter {
-  const files = new Map([["Reports/2026/brief.txt", Buffer.from("DOE brief")], ["Reports/readme.md", Buffer.from("read me")]]);
+  const files = new Map([["Reports/2026/brief.txt", Buffer.from("DOE brief")], ["Reports/readme.md", Buffer.from("read me")], ["Other.txt", Buffer.from("other")]]);
   return {
     list: async (logicalPath: string) => {
       const entries = logicalPath === "Reports"
@@ -46,5 +46,21 @@ describe("folder download", () => {
     const rootStorage = { ...base, stat: async (logicalPath: string) => logicalPath === "" ? { name: "", logicalPath: "", kind: "folder" as const, sizeBytes: 0, modifiedAt: "2026-09-22T00:00:00.000Z" } : base.stat(logicalPath), list: async (logicalPath: string) => logicalPath === "" ? [{ name: "Reports", logicalPath: "Reports", kind: "folder" as const, sizeBytes: 0, modifiedAt: "2026-09-22T00:00:00.000Z" }] : base.list(logicalPath) } as unknown as StorageAdapter;
     const archive = unzipSync((await createFolderArchive(rootStorage, "")).body);
     expect(Object.keys(archive)).toContain("Reports/2026/brief.txt");
+  });
+});
+
+describe("batch download", () => {
+  it("creates one ZIP containing selected files and folders", async () => {
+    const result = await createSelectionArchive(storageFixture(), ["Reports", "Other.txt"]);
+    const archive = unzipSync(result.body);
+    expect(result.filename).toBe("spark-selected-files.zip");
+    expect(Buffer.from(archive["Reports/2026/brief.txt"]).toString()).toBe("DOE brief");
+    expect(Buffer.from(archive["Reports/readme.md"]).toString()).toBe("read me");
+    expect(Buffer.from(archive["Other.txt"]).toString()).toBe("other");
+  });
+
+  it("rejects empty and overlapping selections", async () => {
+    await expect(createSelectionArchive(storageFixture(), [])).rejects.toThrow("INVALID_SELECTION");
+    await expect(createSelectionArchive(storageFixture(), ["Reports", "Reports/readme.md"])).rejects.toThrow("INVALID_SELECTION");
   });
 });

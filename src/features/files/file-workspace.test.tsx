@@ -339,6 +339,38 @@ describe("FileWorkspace", () => {
     expect(screen.getByRole("link", { name: "Download folder" })).toHaveAttribute("href", "/api/files/download?path=Reports");
   });
 
+  it("selects all items in the current folder across pages", () => {
+    const manyEntries = Array.from({ length: 51 }, (_, index) => ({ ...entries[1], name: `File ${index + 1}.txt`, logicalPath: `File ${index + 1}.txt` }));
+    render(<FileWorkspace initialPath="" initialEntries={manyEntries} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all items in current folder" }));
+
+    expect(screen.getByText("51 selected")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("checkbox", { name: "Deselect File 51.txt" })).toBeChecked();
+  });
+
+  it("confirms batch recycling and keeps failed items selected", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
+      succeeded: ["Reports"],
+      failed: [{ path: "Q3 Energy Outlook.pdf", error: "LOCKED" }],
+    }), { status: 200 }));
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Reports" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Q3 Energy Outlook.pdf" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move selected to Recycle bin" }));
+    expect(screen.getByRole("heading", { name: "Move 2 items to Recycle bin?" })).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Move 2 items to Recycle bin" }).at(-1)!);
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/files/batch", expect.objectContaining({ method: "POST" })));
+    expect(await screen.findByText(/1 item moved to Recycle bin; 1 failed/)).toBeInTheDocument();
+    expect(screen.queryByText("Reports", { exact: true })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Deselect Q3 Energy Outlook.pdf" })).toBeChecked();
+  });
+
   it("requires confirmation before moving an item to recycle", async () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
     render(<FileWorkspace initialPath="" initialEntries={entries} />);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, ArrowDownWideNarrow, ArrowUpWideNarrow, File, Folder, Image, MoreHorizontal } from "lucide-react";
+import { ArrowDownToLine, ArrowDownWideNarrow, ArrowUpWideNarrow, File, Folder, Image, MoreHorizontal, Trash2 } from "lucide-react";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -50,14 +50,22 @@ function ItemIcon({ entry, mode }: { entry: FileEntry; mode: WorkspaceViewMode }
   return <span className={`grid shrink-0 place-items-center rounded-xl bg-accent text-primary ${mode.startsWith("extra-large") ? "size-24" : mode.startsWith("large") ? "size-20" : mode.startsWith("medium") ? "size-14" : mode === "small-icons" || mode === "list" || mode === "details" ? "size-10" : "size-12"}`}><Icon className={ICON_SIZES[mode]} aria-hidden="true" /></span>;
 }
 
-export function WorkspaceFileList({ entries, selectedPath, onSelect, onOpen, onRename, onDelete, onToggleFavorite, isFavorite }: Readonly<{
+export function WorkspaceFileList({ entries, selectedPath, selectedPaths, batchBusy, batchMessage, batchMessageIsError, onSelect, onOpen, onRename, onDelete, onToggleFavorite, onToggleSelection, onToggleAllSelection, onDownloadSelected, onRecycleSelected, isFavorite }: Readonly<{
   entries: readonly FileEntry[];
   selectedPath: string | null;
+  selectedPaths: ReadonlySet<string>;
+  batchBusy: "download" | "recycle" | null;
+  batchMessage: string;
+  batchMessageIsError: boolean;
   onSelect: (entry: FileEntry) => void;
   onOpen: (entry: FileEntry) => void;
   onRename: (entry: FileEntry) => void;
   onDelete: (entry: FileEntry) => void;
   onToggleFavorite: (entry: FileEntry) => void;
+  onToggleSelection: (path: string, selected: boolean) => void;
+  onToggleAllSelection: (selected: boolean) => void;
+  onDownloadSelected: () => void;
+  onRecycleSelected: () => void;
   isFavorite: (path: string) => boolean;
 }>) {
   const [viewMode, setViewMode] = useState<WorkspaceViewMode>("details");
@@ -66,6 +74,7 @@ export function WorkspaceFileList({ entries, selectedPath, onSelect, onOpen, onR
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const selectionTimer = useRef<number | null>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
   const sortedEntries = useMemo(() => [...entries].sort((left, right) => {
     if (left.kind !== right.kind) return left.kind === "folder" ? -1 : 1;
     const result = sortField === "name" ? left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }) : sortField === "size" ? left.sizeBytes - right.sizeBytes : Date.parse(left.modifiedAt) - Date.parse(right.modifiedAt);
@@ -74,15 +83,20 @@ export function WorkspaceFileList({ entries, selectedPath, onSelect, onOpen, onR
   const pageCount = Math.max(1, Math.ceil(sortedEntries.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pageEntries = sortedEntries.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const allSelected = entries.length > 0 && entries.every((entry) => selectedPaths.has(entry.logicalPath));
+  const someSelected = entries.some((entry) => selectedPaths.has(entry.logicalPath));
 
   useEffect(() => () => { if (selectionTimer.current !== null) window.clearTimeout(selectionTimer.current); }, []);
+  useEffect(() => { if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected && !allSelected; }, [allSelected, someSelected]);
 
   function row(entry: FileEntry, dense = false) {
     const selected = selectedPath === entry.logicalPath;
+    const checked = selectedPaths.has(entry.logicalPath);
     const iconMode = viewMode.includes("icons");
-    const rowClass = `group/entry relative flex w-full min-w-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${iconMode ? "min-h-36 flex-col items-center justify-center gap-2 p-3 text-center" : `items-center gap-3 text-left ${dense ? "px-3 py-2" : "px-4 py-3"}`} ${selected ? "bg-accent" : "hover:bg-muted/60"}`;
+    const rowClass = `group/entry relative flex w-full min-w-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${iconMode ? "min-h-36 flex-col items-center justify-center gap-2 p-3 text-center" : `items-center gap-3 text-left ${dense ? "px-3 py-2" : "px-4 py-3"}`} ${selected || checked ? "bg-accent" : "hover:bg-muted/60"}`;
     return <ContextMenu key={entry.logicalPath}>
       <ContextMenuTrigger render={<div role="listitem" className={rowClass} data-selected={selected ? "true" : "false"} />}>
+        <input type="checkbox" aria-label={`${checked ? "Deselect" : "Select"} ${entry.name}`} checked={checked} onClick={(event) => event.stopPropagation()} onChange={(event) => onToggleSelection(entry.logicalPath, event.target.checked)} className={`size-4 shrink-0 cursor-pointer rounded border-input accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${iconMode ? "absolute top-2 left-2" : ""}`} />
         <button type="button" className={`flex min-w-0 flex-1 focus-visible:outline-none ${iconMode ? "flex-col items-center gap-2 text-center" : "items-center gap-3 text-left"}`} aria-label={entry.name} aria-pressed={selected} onClick={() => { if (selectionTimer.current !== null) window.clearTimeout(selectionTimer.current); selectionTimer.current = window.setTimeout(() => { selectionTimer.current = null; onSelect(entry); }, 300); }} onDoubleClick={() => { if (selectionTimer.current !== null) window.clearTimeout(selectionTimer.current); selectionTimer.current = null; onOpen(entry); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); if (selectionTimer.current !== null) window.clearTimeout(selectionTimer.current); selectionTimer.current = null; onOpen(entry); } }}>
           <ItemIcon entry={entry} mode={viewMode} />
           <span className={`${iconMode ? "w-full" : "min-w-0 flex-1"}`}><span className="block truncate font-medium">{entry.name}</span><span className="block truncate text-xs text-muted-foreground">{entry.kind === "folder" ? "Folder" : `${formatSize(entry.sizeBytes)} · ${formatDate(entry.modifiedAt)}`}</span></span>
@@ -107,13 +121,16 @@ export function WorkspaceFileList({ entries, selectedPath, onSelect, onOpen, onR
   return <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-view-mode={viewMode} role="region" aria-label="Workspace files">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-3 sm:px-4">
       <div className="flex flex-wrap items-center gap-2">
+        {entries.length > 0 && <label className="flex items-center gap-2 text-xs text-muted-foreground"><input ref={selectAllRef} type="checkbox" aria-label="Select all items in current folder" checked={allSelected} onChange={(event) => onToggleAllSelection(event.target.checked)} className="size-4 rounded border-input accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />Select all</label>}
         <label className="flex items-center gap-2 text-xs text-muted-foreground">View<select aria-label="View mode" className="h-10 rounded-lg border bg-background px-3 text-sm text-foreground" value={viewMode} onChange={(event) => setViewMode(event.target.value as WorkspaceViewMode)}>{VIEW_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}</select></label>
         <label className="flex items-center gap-2 text-xs text-muted-foreground">Sort by<select aria-label="Sort by" className="h-10 rounded-lg border bg-background px-3 text-sm text-foreground" value={sortField} onChange={(event) => { setSortField(event.target.value as SortField); setPage(1); }}><option value="name">Name</option><option value="size">Size</option><option value="modified">Date modified</option></select></label>
         <Button type="button" variant="outline" size="icon" aria-label={sortDirection === "asc" ? "Sort ascending" : "Sort descending"} onClick={() => setSortDirection((value) => value === "asc" ? "desc" : "asc")}>{sortDirection === "asc" ? <ArrowDownWideNarrow /> : <ArrowUpWideNarrow />}</Button>
+        {selectedPaths.size > 0 && <><span className="text-xs font-medium text-muted-foreground" role="status">{selectedPaths.size} selected</span><Button type="button" variant="outline" size="sm" disabled={batchBusy !== null} onClick={onDownloadSelected} aria-label="Download selected"><ArrowDownToLine data-icon="inline-start" />{batchBusy === "download" ? "Preparing ZIP…" : "Download selected"}</Button><Button type="button" variant="destructive" size="sm" disabled={batchBusy !== null} onClick={onRecycleSelected} aria-label="Move selected to Recycle bin"><Trash2 data-icon="inline-start" />Move selected to Recycle bin</Button></>}
+        {batchMessage && <span className="basis-full text-xs text-muted-foreground" role={batchMessageIsError ? "alert" : "status"}>{batchMessage}</span>}
       </div>
       <span className="text-xs text-muted-foreground">{entries.length} items</span>
     </div>
-    {viewMode === "details" && <div className="hidden shrink-0 grid-cols-[minmax(0,1fr)_6rem_9rem_auto] items-center gap-3 border-b bg-card px-6 py-2 text-xs font-medium text-muted-foreground md:grid"><span>Name</span><span>Size</span><span>Modified</span><span /></div>}
+    {viewMode === "details" && <div className="hidden shrink-0 grid-cols-[1.5rem_minmax(0,1fr)_6rem_9rem_auto] items-center gap-3 border-b bg-card px-6 py-2 text-xs font-medium text-muted-foreground md:grid"><span /><span>Name</span><span>Size</span><span>Modified</span><span /></div>}
     <div role="region" aria-label="File list scroll area" tabIndex={0} className="min-h-0 flex-1 overflow-x-auto overflow-y-auto overscroll-contain">
       <div role="list" aria-label="File and folder entries" className={VIEW_GRID[viewMode]}>{pageEntries.map((entry) => <div className={viewMode.includes("icons") ? "flex min-w-0 flex-col items-center gap-2 rounded-xl p-2 text-center" : viewMode === "tiles" ? "rounded-xl border" : ""} key={entry.logicalPath}>{row(entry, viewMode === "small-icons" || viewMode === "list" || viewMode === "details")}</div>)}</div>
     </div>
