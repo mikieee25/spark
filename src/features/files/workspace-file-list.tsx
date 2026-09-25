@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ArrowDownToLine, ArrowDownWideNarrow, ArrowUpWideNarrow, File, Folder, Image, MoreHorizontal, Trash2 } from "lucide-react";
 import { PaginationControls } from "@/components/ui/pagination-controls";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,43 @@ import { downloadUrl, type FileEntry } from "./file-api";
 
 export type WorkspaceViewMode = "extra-large-icons" | "large-icons" | "medium-icons" | "small-icons" | "list" | "details" | "tiles" | "content";
 type SortField = "name" | "size" | "modified";
+const PREFERENCES_KEY = "spark-workspace-preferences";
+const PAGE_SIZES = [25, 50, 100];
+type WorkspacePreferences = Readonly<{ viewMode: WorkspaceViewMode; sortField: SortField; sortDirection: "asc" | "desc"; pageSize: number }>;
+const DEFAULT_PREFERENCES: WorkspacePreferences = { viewMode: "details", sortField: "name", sortDirection: "asc", pageSize: 50 };
+
+function subscribePreferences(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener("spark-workspace-preferences", onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener("spark-workspace-preferences", onChange);
+  };
+}
+
+function getPreferencesSnapshot(): string {
+  try { return window.localStorage.getItem(PREFERENCES_KEY) ?? ""; }
+  catch { return ""; }
+}
+
+function parsePreferences(snapshot: string): WorkspacePreferences {
+  try {
+    const value = JSON.parse(snapshot) as Record<string, unknown>;
+    return {
+      viewMode: VIEW_MODES.some((mode) => mode.value === value.viewMode) ? value.viewMode as WorkspaceViewMode : DEFAULT_PREFERENCES.viewMode,
+      sortField: value.sortField === "size" || value.sortField === "modified" ? value.sortField : DEFAULT_PREFERENCES.sortField,
+      sortDirection: value.sortDirection === "desc" ? "desc" : DEFAULT_PREFERENCES.sortDirection,
+      pageSize: PAGE_SIZES.includes(value.pageSize as number) ? value.pageSize as number : DEFAULT_PREFERENCES.pageSize,
+    };
+  } catch { return DEFAULT_PREFERENCES; }
+}
+
+function savePreferences(preferences: WorkspacePreferences): void {
+  try {
+    window.localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
+    window.dispatchEvent(new Event("spark-workspace-preferences"));
+  } catch { /* Keep the active view usable when browser storage is unavailable. */ }
+}
 
 const VIEW_MODES: Array<{ value: WorkspaceViewMode; label: string }> = [
   { value: "extra-large-icons", label: "Extra large icons" },
@@ -68,11 +105,10 @@ export function WorkspaceFileList({ entries, selectedPath, selectedPaths, batchB
   onRecycleSelected: () => void;
   isFavorite: (path: string) => boolean;
 }>) {
-  const [viewMode, setViewMode] = useState<WorkspaceViewMode>("details");
-  const [sortField, setSortField] = useState<SortField>("name");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const preferencesSnapshot = useSyncExternalStore(subscribePreferences, getPreferencesSnapshot, () => "");
+  const preferences = useMemo(() => parsePreferences(preferencesSnapshot), [preferencesSnapshot]);
+  const { viewMode, sortField, sortDirection, pageSize } = preferences;
   const selectionTimer = useRef<number | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const sortedEntries = useMemo(() => [...entries].sort((left, right) => {
@@ -88,6 +124,10 @@ export function WorkspaceFileList({ entries, selectedPath, selectedPaths, batchB
 
   useEffect(() => () => { if (selectionTimer.current !== null) window.clearTimeout(selectionTimer.current); }, []);
   useEffect(() => { if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected && !allSelected; }, [allSelected, someSelected]);
+
+  function updatePreferences(next: Partial<WorkspacePreferences>) {
+    savePreferences({ ...preferences, ...next });
+  }
 
   function row(entry: FileEntry, dense = false) {
     const selected = selectedPath === entry.logicalPath;
@@ -122,9 +162,9 @@ export function WorkspaceFileList({ entries, selectedPath, selectedPaths, batchB
     <div className="flex flex-wrap items-center justify-between gap-3 border-b px-3 py-3 sm:px-4">
       <div className="flex flex-wrap items-center gap-2">
         {entries.length > 0 && <label className="flex items-center gap-2 text-xs text-muted-foreground"><input ref={selectAllRef} type="checkbox" aria-label="Select all items in current folder" checked={allSelected} onChange={(event) => onToggleAllSelection(event.target.checked)} className="size-4 rounded border-input accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />Select all</label>}
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">View<select aria-label="View mode" className="h-10 rounded-lg border bg-background px-3 text-sm text-foreground" value={viewMode} onChange={(event) => setViewMode(event.target.value as WorkspaceViewMode)}>{VIEW_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}</select></label>
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">Sort by<select aria-label="Sort by" className="h-10 rounded-lg border bg-background px-3 text-sm text-foreground" value={sortField} onChange={(event) => { setSortField(event.target.value as SortField); setPage(1); }}><option value="name">Name</option><option value="size">Size</option><option value="modified">Date modified</option></select></label>
-        <Button type="button" variant="outline" size="icon" aria-label={sortDirection === "asc" ? "Sort ascending" : "Sort descending"} onClick={() => setSortDirection((value) => value === "asc" ? "desc" : "asc")}>{sortDirection === "asc" ? <ArrowDownWideNarrow /> : <ArrowUpWideNarrow />}</Button>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">View<select aria-label="View mode" className="h-10 rounded-lg border bg-background px-3 text-sm text-foreground" value={viewMode} onChange={(event) => updatePreferences({ viewMode: event.target.value as WorkspaceViewMode })}>{VIEW_MODES.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}</select></label>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">Sort by<select aria-label="Sort by" className="h-10 rounded-lg border bg-background px-3 text-sm text-foreground" value={sortField} onChange={(event) => { updatePreferences({ sortField: event.target.value as SortField }); setPage(1); }}><option value="name">Name</option><option value="size">Size</option><option value="modified">Date modified</option></select></label>
+        <Button type="button" variant="outline" size="icon" aria-label={sortDirection === "asc" ? "Sort ascending" : "Sort descending"} onClick={() => updatePreferences({ sortDirection: sortDirection === "asc" ? "desc" : "asc" })}>{sortDirection === "asc" ? <ArrowDownWideNarrow /> : <ArrowUpWideNarrow />}</Button>
         {selectedPaths.size > 0 && <><span className="text-xs font-medium text-muted-foreground" role="status">{selectedPaths.size} selected</span><Button type="button" variant="outline" size="sm" disabled={batchBusy !== null} onClick={onDownloadSelected} aria-label="Download selected"><ArrowDownToLine data-icon="inline-start" />{batchBusy === "download" ? "Preparing ZIP…" : "Download selected"}</Button><Button type="button" variant="destructive" size="sm" disabled={batchBusy !== null} onClick={onRecycleSelected} aria-label="Move selected to Recycle bin"><Trash2 data-icon="inline-start" />Move selected to Recycle bin</Button></>}
         {batchMessage && <span className="basis-full text-xs text-muted-foreground" role={batchMessageIsError ? "alert" : "status"}>{batchMessage}</span>}
       </div>
@@ -134,7 +174,7 @@ export function WorkspaceFileList({ entries, selectedPath, selectedPaths, batchB
     <div role="region" aria-label="File list scroll area" tabIndex={0} className="min-h-0 flex-1 overflow-x-auto overflow-y-auto overscroll-contain">
       <div role="list" aria-label="File and folder entries" className={VIEW_GRID[viewMode]}>{pageEntries.map((entry) => <div className={viewMode.includes("icons") ? "flex min-w-0 flex-col items-center gap-2 rounded-xl p-2 text-center" : viewMode === "tiles" ? "rounded-xl border" : ""} key={entry.logicalPath}>{row(entry, viewMode === "small-icons" || viewMode === "list" || viewMode === "details")}</div>)}</div>
     </div>
-    {entries.length > 0 && <PaginationControls label="Workspace files" totalItems={entries.length} page={currentPage} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />}
+    {entries.length > 0 && <PaginationControls label="Workspace files" totalItems={entries.length} page={currentPage} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(size) => { updatePreferences({ pageSize: size }); setPage(1); }} />}
   </section>;
 }
 

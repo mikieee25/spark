@@ -74,10 +74,15 @@ export async function POST(request: Request): Promise<Response> {
 
   const succeeded: string[] = [];
   const failed: Array<{ path: string; error: string }> = [];
+  const undo: Array<{ id: string; path: string }> = [];
   const service = getFileService();
   for (const path of paths) {
-    try { await service.deleteToRecycle(access.user!, { path }); succeeded.push(path); }
+    try {
+      const entry = await service.deleteToRecycle(access.user!, { path });
+      succeeded.push(path);
+      undo.push({ id: entry.id, path });
+    }
     catch (error) { failed.push({ path, error: errorCode(error) }); }
   }
-  return NextResponse.json({ succeeded, failed }, { headers: noStore });
+  return NextResponse.json({ succeeded, failed, undo }, { headers: noStore });
 }

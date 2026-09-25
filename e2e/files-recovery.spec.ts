@@ -61,3 +61,50 @@ test("single click opens details and double click opens the folder", async ({ pa
   await folder.dblclick();
   await expect(page.getByRole("link", { name: "Double click folder", exact: true })).toBeVisible();
 });
+
+test("workspace drag-and-drop uploads and batch actions can be undone", async ({ page }) => {
+  await signIn(page);
+  await page.locator("[data-file-workspace]").evaluate((element) => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["DOE SPARK"], "dropped-qol.txt", { type: "text/plain" }));
+    element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  });
+  const file = page.getByRole("button", { name: "dropped-qol.txt", exact: true });
+  await expect(file).toBeVisible();
+
+  await page.getByRole("checkbox", { name: "Select dropped-qol.txt" }).check();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download selected" }).click();
+  await expect((await download).suggestedFilename()).toBe("spark-selected-files.zip");
+
+  await page.getByRole("button", { name: "Move selected to Recycle bin" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Move 1 items to Recycle bin" }).click();
+  await expect(page.getByRole("button", { name: "Undo" })).toBeVisible();
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(file).toBeVisible();
+});
+
+test("workspace preferences persist and breadcrumbs navigate to parent folders", async ({ page }) => {
+  await signIn(page);
+  await page.getByRole("combobox", { name: "View mode" }).selectOption("large-icons");
+  await page.getByRole("combobox", { name: "Sort by" }).selectOption("modified");
+  await page.getByRole("button", { name: "Sort ascending" }).click();
+  await page.getByRole("combobox", { name: "Workspace files rows per page" }).selectOption("25");
+  await page.getByRole("combobox", { name: "Auto-refresh interval" }).selectOption("0");
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "View mode" })).toHaveValue("large-icons");
+  await expect(page.getByRole("combobox", { name: "Sort by" })).toHaveValue("modified");
+  await expect(page.getByRole("button", { name: "Sort descending" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Workspace files rows per page" })).toHaveValue("25");
+  await expect(page.getByRole("combobox", { name: "Auto-refresh interval" })).toHaveValue("0");
+
+  await page.getByRole("button", { name: "New folder" }).click();
+  await page.getByRole("textbox", { name: "Folder name" }).fill("QOL Parent");
+  await page.getByRole("button", { name: "Create folder" }).click();
+  await page.getByRole("button", { name: "QOL Parent", exact: true }).dblclick();
+  await page.getByRole("button", { name: "New folder" }).click();
+  await page.getByRole("textbox", { name: "Folder name" }).fill("QOL Child");
+  await page.getByRole("button", { name: "Create folder" }).click();
+  await page.getByRole("button", { name: "QOL Parent" }).click();
+  await expect(page.getByRole("button", { name: "QOL Child", exact: true })).toBeVisible();
+});

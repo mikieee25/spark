@@ -11,6 +11,7 @@ const entries: FileEntry[] = [
 
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn());
+  window.localStorage.clear();
 });
 
 describe("FileWorkspace", () => {
@@ -22,6 +23,68 @@ describe("FileWorkspace", () => {
     expect(screen.getByText("Local-first workspace · OneDrive sync stays external to SPARK")).toBeInTheDocument();
     expect(screen.getAllByText("3 items")).toHaveLength(1);
     expect(screen.getByRole("region", { name: "File list scroll area" })).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
+  });
+
+  it("navigates to an ancestor from the breadcrumb", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => new Response(JSON.stringify(
+      String(input).includes("/api/discovery/recent") ? { items: [] } : { path: "Energy", entries: [] },
+    ), { status: 200 }));
+    render(<FileWorkspace initialPath="Energy/Reports/2026" initialEntries={entries} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Energy" }));
+
+    await waitFor(() => expect(screen.getByText("Energy", { selector: "p.mt-1" })).toBeInTheDocument());
+    expect(fetch).toHaveBeenCalledWith("/api/files?path=Energy", expect.anything());
+  });
+
+  it("restores the saved view, sort, and page size preferences", async () => {
+    window.localStorage.setItem("spark-workspace-preferences", JSON.stringify({ viewMode: "list", sortField: "modified", sortDirection: "desc", pageSize: 25 }));
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "View mode" })).toHaveValue("list"));
+    expect(screen.getByRole("combobox", { name: "Sort by" })).toHaveValue("modified");
+    expect(screen.getByRole("combobox", { name: "Workspace files rows per page" })).toHaveValue("25");
+    expect(screen.getByRole("button", { name: "Sort descending" })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("combobox", { name: "View mode" }), { target: { value: "details" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Auto-refresh interval" }), { target: { value: "15" } });
+    await waitFor(() => expect(JSON.parse(window.localStorage.getItem("spark-workspace-preferences") ?? "{}")).toMatchObject({ viewMode: "details" }));
+    expect(window.localStorage.getItem("spark-auto-refresh-seconds")).toBe("15");
+  });
+
+  it("uploads files dropped onto the workspace", async () => {
+    const file = new File(["DOE"], "brief.txt", { type: "text/plain" });
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "/api/files/uploads") return new Response(JSON.stringify({ item: {} }), { status: 200 });
+      if (url.startsWith("/api/files?")) return new Response(JSON.stringify({ path: "", entries }), { status: 200 });
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    });
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+
+    fireEvent.drop(document.querySelector("[data-file-workspace]")!, { dataTransfer: { types: ["Files"], items: [{ kind: "file", getAsFile: () => file }] } });
+
+    expect(await screen.findByText("Uploaded 1 of 1 files.")).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith("/api/files/uploads", expect.objectContaining({ method: "POST", body: expect.any(FormData) }));
+  });
+
+  it("offers a short-lived undo after recycling a single item", async () => {
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (init?.method === "DELETE") return new Response(JSON.stringify({ id: "recycle-1", originalPath: "Q3 Energy Outlook.pdf" }), { status: 200 });
+      if (url.includes("/restore")) return new Response(JSON.stringify({ entry: { id: "recycle-1" } }), { status: 200 });
+      if (url.startsWith("/api/files?")) return new Response(JSON.stringify({ path: "", entries }), { status: 200 });
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    });
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+    fireEvent.click(screen.getByRole("button", { name: "Q3 Energy Outlook.pdf" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Move to Recycle bin" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Move to Recycle bin" }).at(-1)!);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/recycle/recycle-1/restore", expect.objectContaining({ method: "POST" })));
+    expect(await screen.findByText("Restored 1 item.")).toBeInTheDocument();
   });
 
   it("shows calculated folder sizes", () => {
@@ -354,6 +417,7 @@ describe("FileWorkspace", () => {
     vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({
       succeeded: ["Reports"],
       failed: [{ path: "Q3 Energy Outlook.pdf", error: "LOCKED" }],
+      undo: [{ id: "recycle-reports", path: "Reports" }],
     }), { status: 200 }));
     render(<FileWorkspace initialPath="" initialEntries={entries} />);
 
@@ -369,6 +433,7 @@ describe("FileWorkspace", () => {
     expect(await screen.findByText(/1 item moved to Recycle bin; 1 failed/)).toBeInTheDocument();
     expect(screen.queryByText("Reports", { exact: true })).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Deselect Q3 Energy Outlook.pdf" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeInTheDocument();
   });
 
   it("requires confirmation before moving an item to recycle", async () => {

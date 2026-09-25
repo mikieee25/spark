@@ -58,13 +58,13 @@ describe("batch file route", () => {
   it("returns per-item recycle successes and failures", async () => {
     mocks.deleteToRecycle.mockImplementation(async (_user: unknown, { path }: { path: string }) => {
       if (path === "bad.txt") throw new Error("NOT_FOUND");
-      return { id: path };
+      return { id: `recycle-${path}` };
     });
 
     const response = await POST(request({ action: "recycle", paths: ["good.txt", "bad.txt"] }));
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ succeeded: ["good.txt"], failed: [{ path: "bad.txt", error: "NOT_FOUND" }] });
+    await expect(response.json()).resolves.toEqual({ succeeded: ["good.txt"], failed: [{ path: "bad.txt", error: "NOT_FOUND" }], undo: [{ id: "recycle-good.txt", path: "good.txt" }] });
   });
 
   it("rejects duplicate paths", async () => {

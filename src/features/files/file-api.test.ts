@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { downloadSelection, recycleSelection, uploadFolder } from "./file-api";
+import { downloadSelection, recycleSelection, restoreRecycleItem, uploadFolder } from "./file-api";
 
 beforeEach(() => vi.stubGlobal("fetch", vi.fn()));
 
@@ -39,8 +39,16 @@ describe("batch file actions", () => {
   });
 
   it("returns per-item recycle outcomes", async () => {
-    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ succeeded: ["note.txt"], failed: [] }), { status: 200 }));
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ succeeded: ["note.txt"], failed: [], undo: [{ id: "recycle-1", path: "note.txt" }] }), { status: 200 }));
 
-    await expect(recycleSelection(["note.txt"])).resolves.toEqual({ succeeded: ["note.txt"], failed: [] });
+    await expect(recycleSelection(["note.txt"])).resolves.toEqual({ succeeded: ["note.txt"], failed: [], undo: [{ id: "recycle-1", path: "note.txt" }] });
+  });
+
+  it("restores one recycle entry without replacing an existing destination", async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ entry: { id: "recycle-1" } }), { status: 200 }));
+
+    await expect(restoreRecycleItem("recycle-1")).resolves.toEqual({ entry: { id: "recycle-1" } });
+
+    expect(fetch).toHaveBeenCalledWith("/api/recycle/recycle-1/restore", expect.objectContaining({ method: "POST", body: "{}" }));
   });
 });

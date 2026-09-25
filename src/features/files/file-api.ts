@@ -29,13 +29,15 @@ export async function createFolder(path: string, signal?: AbortSignal): Promise<
   return jsonRequest("/api/files/folders", { method: "POST", body: JSON.stringify({ path }), signal });
 }
 
-export async function deleteFile(path: string): Promise<unknown> {
+export async function deleteFile(path: string): Promise<{ id: string; originalPath: string }> {
   return jsonRequest(`/api/files?path=${encodeURIComponent(path)}`, { method: "DELETE" });
 }
 
+export type RecycleUndoItem = Readonly<{ id: string; path: string }>;
 export type BatchRecycleResult = Readonly<{
   succeeded: string[];
   failed: Array<{ path: string; error: string }>;
+  undo: RecycleUndoItem[];
 }>;
 
 async function batchRequest(action: "download" | "recycle", paths: readonly string[]): Promise<Response> {
@@ -59,6 +61,10 @@ export async function recycleSelection(paths: readonly string[]): Promise<BatchR
   return await (await batchRequest("recycle", paths)).json() as BatchRecycleResult;
 }
 
+export async function restoreRecycleItem(id: string): Promise<unknown> {
+  return jsonRequest(`/api/recycle/${encodeURIComponent(id)}/restore`, { method: "POST", body: "{}" });
+}
+
 export async function moveFile(input: { source: string; destination: string; conflict?: ConflictPolicy }): Promise<unknown> {
   return jsonRequest("/api/files", { method: "PATCH", body: JSON.stringify(input) });
 }
@@ -76,6 +82,7 @@ export async function uploadFile(input: { directory: string; file: File; conflic
 
 type FolderUploadConflict = Readonly<{ file: File; logicalPath: string }>;
 type FolderUploadProgress = Readonly<{ completed: number; total: number; logicalPath: string }>;
+export type FolderUploadItem = File | Readonly<{ file: File; relativePath: string }>;
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new FileApiError("UPLOAD_CANCELLED", 409);
@@ -87,15 +94,16 @@ function joinPath(...parts: string[]): string {
 
 export async function uploadFolder(input: {
   directory: string;
-  files: readonly File[];
+  files: readonly FolderUploadItem[];
   onProgress?: (progress: FolderUploadProgress) => void;
   onConflict?: (conflict: FolderUploadConflict) => Promise<ConflictPolicy | "cancel">;
   signal?: AbortSignal;
 }): Promise<{ uploaded: number; skipped: number }> {
-  const files = input.files.filter((file) => file.size >= 0);
+  const files = input.files.filter((source) => ("file" in source ? source.file : source).size >= 0);
   const directories = new Set<string>();
-  const items = files.map((file) => {
-    const relative = (file.webkitRelativePath || file.name).replaceAll("\\", "/");
+  const items = files.map((source) => {
+    const file = "file" in source ? source.file : source;
+    const relative = ("file" in source ? source.relativePath : source.webkitRelativePath || source.name).replaceAll("\\", "/");
     const segments = relative.split("/").filter(Boolean);
     const name = segments.pop();
     if (!name) throw new FileApiError("INVALID_UPLOAD", 400);

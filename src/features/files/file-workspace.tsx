@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { DragEvent } from "react";
 import { ArrowDownToLine, ArrowLeft, Clock3, File, Folder, FolderUp, LoaderCircle, Plus, Star, Trash2, Upload, X } from "lucide-react";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -14,7 +15,8 @@ import { SearchBar, type SearchKind } from "@/features/discovery/search-bar";
 import { listRecent, searchFiles, setFavorite, type SearchFilesResponse } from "@/features/discovery/search-api";
 import type { SearchResult } from "@/features/discovery/search-repository";
 import type { Favorite, RecentItem } from "@/features/discovery/types";
-import { createFolder, deleteFile, downloadSelection, downloadUrl, FileApiError, listFiles, moveFile, recycleSelection, uploadFile, uploadFolder, type ConflictPolicy, type FileEntry } from "./file-api";
+import { createFolder, deleteFile, downloadSelection, downloadUrl, FileApiError, listFiles, moveFile, recycleSelection, restoreRecycleItem, uploadFile, uploadFolder, type ConflictPolicy, type FileEntry, type FolderUploadItem, type RecycleUndoItem } from "./file-api";
+import { filesFromDropItems } from "./drag-drop-upload";
 import { WorkspaceFileList } from "./workspace-file-list";
 
 type SelectedItem = FileEntry & { mimeType?: string };
@@ -22,6 +24,7 @@ type SearchState = "idle" | "loading" | "success" | "error";
 type FolderConflict = Readonly<{ file: File; logicalPath: string }>;
 type Props = Readonly<{ initialPath: string; initialEntries: FileEntry[] | null; initialPreview?: string; initialFavorites?: Favorite[]; initialRecent?: RecentItem[] }>;
 const AUTO_REFRESH_STORAGE_KEY = "spark-auto-refresh-seconds";
+const UNDO_WINDOW_MS = 10_000;
 const AUTO_REFRESH_OPTIONS = [
   { value: 0, label: "Off" },
   { value: 15, label: "15 seconds" },
@@ -86,6 +89,10 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
   const [batchBusy, setBatchBusy] = useState<"download" | "recycle" | null>(null);
   const [batchMessage, setBatchMessage] = useState("");
   const [batchMessageIsError, setBatchMessageIsError] = useState(false);
+  const [undoItems, setUndoItems] = useState<RecycleUndoItem[]>([]);
+  const [undoMessage, setUndoMessage] = useState("");
+  const [undoBusy, setUndoBusy] = useState(false);
+  const [dropActive, setDropActive] = useState(false);
   const [favorites, setFavorites] = useState(initialFavorites);
   const [recent, setRecent] = useState(initialRecent);
   const [searchState, setSearchState] = useState<SearchState>("idle");
@@ -103,6 +110,7 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
   const folderConflictResolver = useRef<((choice: ConflictPolicy | "cancel") => void) | null>(null);
   const searchController = useRef<AbortController>(null);
   const uploadController = useRef<AbortController>(null);
+  const undoTimer = useRef<number | null>(null);
   const autoRefreshController = useRef<AbortController>(null);
   const navigationController = useRef<AbortController>(null);
   const navigationSequence = useRef(0);
@@ -115,6 +123,7 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
     uploadController.current?.abort();
     autoRefreshController.current?.abort();
     navigationController.current?.abort();
+    if (undoTimer.current !== null) window.clearTimeout(undoTimer.current);
   }, []);
 
   useEffect(() => {
@@ -326,11 +335,12 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
     setFolderConflict(null);
   }
 
-  async function submitFolderUpload(files: File[]) {
+  async function submitFolderUpload(files: readonly FolderUploadItem[]) {
     if (!files.length) return;
     const controller = new AbortController();
     uploadController.current = controller;
-    setFolderProgress({ completed: 0, total: files.length, logicalPath: files[0]?.name ?? "" });
+    const firstFile = files[0];
+    setFolderProgress({ completed: 0, total: files.length, logicalPath: firstFile ? ("file" in firstFile ? firstFile.file.name : firstFile.name) : "" });
     setError("");
     try {
       const result = await uploadFolder({ directory: currentPath, files, signal: controller.signal, onProgress: setFolderProgress, onConflict: askFolderConflict });
@@ -351,6 +361,37 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
     if (folderConflict) resolveFolderConflict("cancel");
   }
 
+  function handleDragEnter(event: DragEvent<HTMLDivElement>) {
+    if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+    event.preventDefault();
+    setDropActive(true);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    if (Array.from(event.dataTransfer.types).includes("Files")) event.preventDefault();
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLDivElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropActive(false);
+  }
+
+  async function handleDrop(event: DragEvent<HTMLDivElement>) {
+    if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+    event.preventDefault();
+    setDropActive(false);
+    if (folderProgress || uploadingFile || isOpeningFolder) {
+      setError("Wait for the current workspace operation to finish before dropping files.");
+      return;
+    }
+    try {
+      const files = await filesFromDropItems(Array.from(event.dataTransfer.items));
+      if (!files.length) throw new Error("No files found in the drop.");
+      await submitFolderUpload(files);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to read the dropped files.");
+    }
+  }
+
   function toggleBatchItem(path: string, selected: boolean) {
     setBatchMessage("");
     setBatchSelection((current) => {
@@ -364,6 +405,44 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
   function toggleAllBatchItems(selected: boolean) {
     setBatchMessage("");
     setBatchSelection(selected ? new Set(entries.map((entry) => entry.logicalPath)) : new Set());
+  }
+
+  function offerUndo(items: RecycleUndoItem[], message: string) {
+    if (undoTimer.current !== null) window.clearTimeout(undoTimer.current);
+    setUndoItems(items);
+    setUndoMessage(message);
+    undoTimer.current = window.setTimeout(() => {
+      setUndoItems([]);
+      setUndoMessage("");
+      undoTimer.current = null;
+    }, UNDO_WINDOW_MS);
+  }
+
+  async function undoRecycle() {
+    if (undoBusy || !undoItems.length) return;
+    if (undoTimer.current !== null) window.clearTimeout(undoTimer.current);
+    undoTimer.current = null;
+    setUndoBusy(true);
+    const outcomes: Array<{ item: RecycleUndoItem; restored: boolean }> = [];
+    for (const item of undoItems) {
+      try {
+        await restoreRecycleItem(item.id);
+        outcomes.push({ item, restored: true });
+      } catch {
+        outcomes.push({ item, restored: false });
+      }
+    }
+    const restored = outcomes.filter((outcome) => outcome.restored);
+    const failed = outcomes.filter((outcome) => !outcome.restored).map((outcome) => outcome.item);
+    setUndoItems(failed);
+    setUndoBusy(false);
+    if (restored.length) {
+      setUndoMessage(failed.length ? `Restored ${restored.length}; ${failed.length} could not be restored. Check the Recycle bin.` : `Restored ${restored.length} item${restored.length === 1 ? "" : "s"}.`);
+      await refreshCurrentFolder();
+    } else {
+      setUndoMessage("Unable to restore the item. Check the Recycle bin for details.");
+    }
+    undoTimer.current = window.setTimeout(() => { setUndoItems([]); setUndoMessage(""); undoTimer.current = null; }, failed.length ? UNDO_WINDOW_MS : 3_000);
   }
 
   async function submitBatchDownload() {
@@ -406,6 +485,7 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
       });
       setFavorites((current) => current.filter((favorite) => !succeeded.has(favorite.logicalPath)));
       setBatchSelection(new Set(result.failed.map((item) => item.path)));
+      if (result.undo.length) offerUndo(result.undo, `Moved ${result.undo.length} item${result.undo.length === 1 ? "" : "s"} to Recycle bin.`);
       setBatchRecycleOpen(false);
       const moved = `${result.succeeded.length} item${result.succeeded.length === 1 ? "" : "s"} moved to Recycle bin`;
       if (result.failed.length) {
@@ -425,7 +505,7 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
 
   async function submitDelete() {
     if (!selected) return;
-    try { await deleteFile(selected.logicalPath); setEntries((current) => { const next = current.filter((entry) => entry.logicalPath !== selected.logicalPath); rememberFolder(folderCache.current, currentPath, next); return next; }); setFavorites((current) => current.filter((favorite) => favorite.logicalPath !== selected.logicalPath)); setSelected(null); setDeleteOpen(false); setNotice(`${selected.name} moved to Recycle bin.`); }
+    try { const recycled = await deleteFile(selected.logicalPath); setEntries((current) => { const next = current.filter((entry) => entry.logicalPath !== selected.logicalPath); rememberFolder(folderCache.current, currentPath, next); return next; }); setFavorites((current) => current.filter((favorite) => favorite.logicalPath !== selected.logicalPath)); setSelected(null); setDeleteOpen(false); setNotice(`${selected.name} moved to Recycle bin.`); offerUndo([{ id: recycled.id, path: recycled.originalPath }], `${selected.name} moved to Recycle bin.`); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to delete item"); }
   }
 
@@ -439,8 +519,10 @@ export function FileWorkspace({ initialPath, initialEntries, initialPreview, ini
   const selectedIsFavorite = useMemo(() => Boolean(selected && favorites.some((favorite) => favorite.logicalPath === selected.logicalPath)), [favorites, selected]);
 
   const isOpeningFolder = openingPath !== null;
-  return <div data-file-workspace className="mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-4 lg:h-full lg:min-h-0 xl:gap-5">
-    <div className="shrink-0"><Breadcrumb><BreadcrumbList><BreadcrumbItem><BreadcrumbLink href="/files">Workspace</BreadcrumbLink></BreadcrumbItem><BreadcrumbSeparator /><BreadcrumbItem><BreadcrumbPage>{currentPath || "Shared files"}</BreadcrumbPage></BreadcrumbItem></BreadcrumbList></Breadcrumb></div>
+  return <div data-file-workspace className="relative mx-auto flex w-full min-w-0 max-w-[1500px] flex-col gap-4 lg:h-full lg:min-h-0 xl:gap-5" onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={(event) => void handleDrop(event)}>
+    {undoMessage && <div role="status" aria-live="polite" className="fixed bottom-4 right-4 z-50 flex max-w-[calc(100vw-2rem)] items-center gap-4 rounded-xl border bg-card px-4 py-3 text-sm text-card-foreground shadow-lg"><span>{undoMessage}</span>{undoItems.length > 0 && <Button variant="outline" size="sm" onClick={() => void undoRecycle()} disabled={undoBusy}>{undoBusy ? "Restoring…" : "Undo"}</Button>}</div>}
+    {dropActive && <div aria-hidden="true" className="pointer-events-none fixed inset-3 z-40 grid place-items-center rounded-2xl border-2 border-dashed border-primary bg-background/90 text-center shadow-xl"><div><Upload className="mx-auto size-10 text-primary" /><p className="mt-3 text-lg font-semibold">Drop files or folders to upload</p><p className="mt-1 text-sm text-muted-foreground">Folder structure and conflict safeguards are preserved.</p></div></div>}
+    <div className="shrink-0"><Breadcrumb><BreadcrumbList><BreadcrumbItem><BreadcrumbLink render={<button type="button" onClick={() => void navigateTo("")}>Workspace</button>} /></BreadcrumbItem>{currentPath ? currentPath.split("/").map((segment, index, segments) => { const path = segments.slice(0, index + 1).join("/"); const current = index === segments.length - 1; return <Fragment key={path}><BreadcrumbSeparator /><BreadcrumbItem>{current ? <BreadcrumbPage>{segment}</BreadcrumbPage> : <BreadcrumbLink render={<button type="button" onClick={() => void navigateTo(path)}>{segment}</button>} />}</BreadcrumbItem></Fragment>; }) : <><BreadcrumbSeparator /><BreadcrumbItem><BreadcrumbPage>Shared files</BreadcrumbPage></BreadcrumbItem></>}</BreadcrumbList></Breadcrumb></div>
     <div className="flex shrink-0 flex-col gap-5 xl:flex-row xl:items-end xl:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">My workspace</p><h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Shared files</h1><p className="mt-2 max-w-2xl text-sm text-muted-foreground">A calm, searchable home for DOE records, working files, and shared knowledge.</p></div><div className="flex flex-wrap items-center gap-2"><Button variant="outline" onClick={() => setNewFolderOpen(true)} disabled={Boolean(folderProgress || uploadingFile || isOpeningFolder)}><Plus data-icon="inline-start" />New folder</Button><Button variant="outline" onClick={() => folderInput.current?.click()} disabled={Boolean(folderProgress || uploadingFile || isOpeningFolder)}><FolderUp data-icon="inline-start" />Upload folder</Button><Button onClick={() => fileInput.current?.click()} disabled={Boolean(folderProgress || uploadingFile || isOpeningFolder)}><Upload data-icon="inline-start" />Upload</Button><input ref={fileInput} type="file" className="sr-only" aria-label="File upload" onChange={(event) => { const file = event.target.files?.[0]; if (file) void submitUpload(file); event.target.value = ""; }} /><input ref={(element) => { folderInput.current = element; element?.setAttribute("webkitdirectory", ""); }} type="file" className="sr-only" aria-label="Folder upload" onChange={(event) => { void submitFolderUpload(Array.from(event.target.files ?? [])); event.target.value = ""; }} /></div></div>
     <div className="shrink-0"><SearchBar loading={searchState === "loading"} onSearch={submitSearch} onClear={() => { searchController.current?.abort(); setSearchState("idle"); setSearchQuery(""); }} /></div>
     <section className="shrink-0" aria-label="Search results" aria-live="polite">
