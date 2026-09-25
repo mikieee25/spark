@@ -1,4 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
-describe("access status route", () => { it("exports a GET handler", async () => { const route = await import("./route"); expect(route.GET).toBeTypeOf("function"); }); });
+describe("access status route", () => {
+  it("exports a GET handler", async () => {
+    const route = await import("./route");
+    expect(route.GET).toBeTypeOf("function");
+  });
+});

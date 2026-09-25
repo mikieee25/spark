@@ -7,7 +7,11 @@ import type Database from "better-sqlite3";
 import { openDatabase } from "@/lib/db/database";
 import { migrate } from "@/lib/db/migrations";
 import { createStorageAdapter } from "./storage-adapter";
-import { createFileService, listFileVersions, type FileActor } from "./file-service";
+import {
+  createFileService,
+  listFileVersions,
+  type FileActor,
+} from "./file-service";
 
 let database: Database.Database;
 let directory: string;
@@ -25,13 +29,30 @@ beforeEach(async () => {
   await fs.mkdir(dataDirectory);
   database = openDatabase(path.join(directory, "spark.db"));
   migrate(database);
-  for (const [id, username, role] of [["user-1", "alex", "user"], ["admin-1", "admin", "admin"]]) {
-    database.prepare(`INSERT INTO users
+  for (const [id, username, role] of [
+    ["user-1", "alex", "user"],
+    ["admin-1", "admin", "admin"],
+  ]) {
+    database
+      .prepare(
+        `INSERT INTO users
       (id, username, display_name, password_hash, role, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, username, username, "test-hash", role, "2026-09-22T00:00:00.000Z", "2026-09-22T00:00:00.000Z");
+      VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        id,
+        username,
+        username,
+        "test-hash",
+        role,
+        "2026-09-22T00:00:00.000Z",
+        "2026-09-22T00:00:00.000Z"
+      );
   }
-  service = createFileService({ database, storage: createStorageAdapter({ filesRoot, dataDirectory }) });
+  service = createFileService({
+    database,
+    storage: createStorageAdapter({ filesRoot, dataDirectory }),
+  });
 });
 
 afterEach(async () => {
@@ -42,38 +63,89 @@ afterEach(async () => {
 describe("file service", () => {
   it("creates a folder and stages an upload", async () => {
     await service.createFolder(user, { path: "Reports" });
-    await service.uploadFile(user, { directory: "Reports", name: "note.txt", bytes: Buffer.from("DOE") });
-    expect(await fs.readFile(path.join(filesRoot, "Reports", "note.txt"), "utf8")).toBe("DOE");
+    await service.uploadFile(user, {
+      directory: "Reports",
+      name: "note.txt",
+      bytes: Buffer.from("DOE"),
+    });
+    expect(
+      await fs.readFile(path.join(filesRoot, "Reports", "note.txt"), "utf8")
+    ).toBe("DOE");
   });
 
   it("requires an explicit conflict policy and captures a replacement version", async () => {
-    await service.uploadFile(user, { directory: "", name: "a.txt", bytes: Buffer.from("one") });
-    await expect(service.uploadFile(user, { directory: "", name: "a.txt", bytes: Buffer.from("two") })).rejects.toThrow("CONFLICT");
-    await service.uploadFile(user, { directory: "", name: "a.txt", bytes: Buffer.from("two"), conflict: "replace" });
-    expect(await fs.readFile(path.join(filesRoot, "a.txt"), "utf8")).toBe("two");
+    await service.uploadFile(user, {
+      directory: "",
+      name: "a.txt",
+      bytes: Buffer.from("one"),
+    });
+    await expect(
+      service.uploadFile(user, {
+        directory: "",
+        name: "a.txt",
+        bytes: Buffer.from("two"),
+      })
+    ).rejects.toThrow("CONFLICT");
+    await service.uploadFile(user, {
+      directory: "",
+      name: "a.txt",
+      bytes: Buffer.from("two"),
+      conflict: "replace",
+    });
+    expect(await fs.readFile(path.join(filesRoot, "a.txt"), "utf8")).toBe(
+      "two"
+    );
     expect(listFileVersions(database, "a.txt")).toHaveLength(1);
   });
 
   it("rejects moving a folder into its own descendant", async () => {
     await service.createFolder(user, { path: "Reports" });
-    await expect(service.moveFile(user, { source: "Reports", destination: "Reports/Archive" })).rejects.toThrow("INVALID_DESTINATION");
+    await expect(
+      service.moveFile(user, {
+        source: "Reports",
+        destination: "Reports/Archive",
+      })
+    ).rejects.toThrow("INVALID_DESTINATION");
   });
 
   it("moves deleted content into recycle and restores it", async () => {
-    await service.uploadFile(user, { directory: "", name: "recover.txt", bytes: Buffer.from("recover") });
-    const deleted = await service.deleteToRecycle(user, { path: "recover.txt" });
-    expect(await fs.stat(path.join(filesRoot, "recover.txt")).catch(() => null)).toBeNull();
+    await service.uploadFile(user, {
+      directory: "",
+      name: "recover.txt",
+      bytes: Buffer.from("recover"),
+    });
+    const deleted = await service.deleteToRecycle(user, {
+      path: "recover.txt",
+    });
+    expect(
+      await fs.stat(path.join(filesRoot, "recover.txt")).catch(() => null)
+    ).toBeNull();
     const restored = await service.restoreFromRecycle(user, { id: deleted.id });
     expect(restored).toHaveProperty("entry");
-    if ("entry" in restored) expect(restored.entry).toEqual(expect.objectContaining({ state: "restored" }));
-    expect(await fs.readFile(path.join(filesRoot, "recover.txt"), "utf8")).toBe("recover");
+    if ("entry" in restored)
+      expect(restored.entry).toEqual(
+        expect.objectContaining({ state: "restored" })
+      );
+    expect(await fs.readFile(path.join(filesRoot, "recover.txt"), "utf8")).toBe(
+      "recover"
+    );
   });
 
   it("enforces administrator-only permanent purge", async () => {
-    await service.uploadFile(user, { directory: "", name: "purge.txt", bytes: Buffer.from("purge") });
+    await service.uploadFile(user, {
+      directory: "",
+      name: "purge.txt",
+      bytes: Buffer.from("purge"),
+    });
     const deleted = await service.deleteToRecycle(user, { path: "purge.txt" });
-    await expect(service.purgeRecycleContent(user, deleted.id)).rejects.toThrow("ADMIN_REQUIRED");
+    await expect(service.purgeRecycleContent(user, deleted.id)).rejects.toThrow(
+      "ADMIN_REQUIRED"
+    );
     await service.purgeRecycleContent(admin, deleted.id);
-    expect(database.prepare("SELECT purged_at FROM recycle_entries WHERE id = ?").get(deleted.id)).toEqual(expect.objectContaining({ purged_at: expect.any(String) }));
+    expect(
+      database
+        .prepare("SELECT purged_at FROM recycle_entries WHERE id = ?")
+        .get(deleted.id)
+    ).toEqual(expect.objectContaining({ purged_at: expect.any(String) }));
   });
 });

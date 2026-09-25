@@ -21,14 +21,36 @@ beforeEach(() => {
   directory = fs.mkdtempSync(path.join(os.tmpdir(), "spark-recycle-"));
   database = openDatabase(path.join(directory, "spark.db"));
   migrate(database);
-  database.prepare(`INSERT INTO users
+  database
+    .prepare(
+      `INSERT INTO users
     (id, username, display_name, password_hash, role, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run("user-1", "alex", "Alex DOE", "test-hash", "user", "2026-09-22T00:00:00.000Z", "2026-09-22T00:00:00.000Z");
-  database.prepare(`INSERT INTO users
+    VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      "user-1",
+      "alex",
+      "Alex DOE",
+      "test-hash",
+      "user",
+      "2026-09-22T00:00:00.000Z",
+      "2026-09-22T00:00:00.000Z"
+    );
+  database
+    .prepare(
+      `INSERT INTO users
     (id, username, display_name, password_hash, role, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run("admin-1", "admin", "SPARK Administrator", "test-hash", "admin", "2026-09-22T00:00:00.000Z", "2026-09-22T00:00:00.000Z");
+    VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      "admin-1",
+      "admin",
+      "SPARK Administrator",
+      "test-hash",
+      "admin",
+      "2026-09-22T00:00:00.000Z",
+      "2026-09-22T00:00:00.000Z"
+    );
 });
 
 afterEach(() => {
@@ -49,17 +71,29 @@ describe("recycle repository", () => {
       occurredAt: new Date("2026-09-22T01:00:00.000Z"),
     });
 
-    expect(listRecycleEntries(database)).toEqual([expect.objectContaining({
-      id: entry.id,
-      originalPath: "Shared/report.pdf",
-      state: "active",
-    })]);
+    expect(listRecycleEntries(database)).toEqual([
+      expect.objectContaining({
+        id: entry.id,
+        originalPath: "Shared/report.pdf",
+        state: "active",
+      }),
+    ]);
 
-    const restored = restoreRecycleEntry(database, entry.id, "user-1", new Date("2026-09-22T02:00:00.000Z"));
+    const restored = restoreRecycleEntry(
+      database,
+      entry.id,
+      "user-1",
+      new Date("2026-09-22T02:00:00.000Z")
+    );
     expect(restored.state).toBe("restored");
     expect(listRecycleEntries(database)).toEqual([]);
-    expect(database.prepare("SELECT action FROM activity_events ORDER BY occurred_at DESC LIMIT 1").get())
-      .toEqual({ action: "recycle_restore" });
+    expect(
+      database
+        .prepare(
+          "SELECT action FROM activity_events ORDER BY occurred_at DESC LIMIT 1"
+        )
+        .get()
+    ).toEqual({ action: "recycle_restore" });
   });
 
   it("requires an administrator for permanent purge", () => {
@@ -73,10 +107,22 @@ describe("recycle repository", () => {
       expiresAt: new Date("2026-10-22T00:00:00.000Z"),
     });
 
-    expect(() => purgeRecycleEntry(database, entry.id, { id: "user-1", role: "user" }, new Date()))
-      .toThrow("ADMIN_REQUIRED");
-    expect(purgeRecycleEntry(database, entry.id, { id: "admin-1", role: "admin" }, new Date()).state)
-      .toBe("purged");
+    expect(() =>
+      purgeRecycleEntry(
+        database,
+        entry.id,
+        { id: "user-1", role: "user" },
+        new Date()
+      )
+    ).toThrow("ADMIN_REQUIRED");
+    expect(
+      purgeRecycleEntry(
+        database,
+        entry.id,
+        { id: "admin-1", role: "admin" },
+        new Date()
+      ).state
+    ).toBe("purged");
   });
 
   it("marks expired entries and records retention activity", () => {
@@ -91,9 +137,16 @@ describe("recycle repository", () => {
       occurredAt: new Date("2026-09-20T00:00:00.000Z"),
     });
 
-    expect(expireRecycleEntries(database, new Date("2026-09-22T00:00:00.000Z"))).toHaveLength(1);
+    expect(
+      expireRecycleEntries(database, new Date("2026-09-22T00:00:00.000Z"))
+    ).toHaveLength(1);
     expect(listRecycleEntries(database)).toEqual([]);
-    expect(database.prepare("SELECT action FROM activity_events ORDER BY occurred_at DESC LIMIT 1").get())
-      .toEqual({ action: "recycle_expire" });
+    expect(
+      database
+        .prepare(
+          "SELECT action FROM activity_events ORDER BY occurred_at DESC LIMIT 1"
+        )
+        .get()
+    ).toEqual({ action: "recycle_expire" });
   });
 });

@@ -26,13 +26,27 @@ describe("createAdministrator", () => {
   it("records administrator creation without storing the password", async () => {
     const administrator = await createAdministrator(
       database,
-      { username: "admin", displayName: "SPARK Administrator", password: "correct-password" },
-      new Date("2026-09-22T03:00:00.000Z"),
+      {
+        username: "admin",
+        displayName: "SPARK Administrator",
+        password: "correct-password",
+      },
+      new Date("2026-09-22T03:00:00.000Z")
     );
 
-    expect(database.prepare("SELECT password_hash FROM users WHERE id = ?").get(administrator.id))
-      .toEqual(expect.objectContaining({ password_hash: expect.not.stringContaining("correct-password") }));
-    expect(database.prepare("SELECT action, actor_user_id FROM activity_events").get())
-      .toEqual({ action: "account_created", actor_user_id: administrator.id });
+    expect(
+      database
+        .prepare("SELECT password_hash FROM users WHERE id = ?")
+        .get(administrator.id)
+    ).toEqual(
+      expect.objectContaining({
+        password_hash: expect.not.stringContaining("correct-password"),
+      })
+    );
+    expect(
+      database
+        .prepare("SELECT action, actor_user_id FROM activity_events")
+        .get()
+    ).toEqual({ action: "account_created", actor_user_id: administrator.id });
   });
 });

@@ -15,10 +15,20 @@ beforeEach(() => {
   directory = fs.mkdtempSync(path.join(os.tmpdir(), "spark-activity-"));
   database = openDatabase(path.join(directory, "spark.db"));
   migrate(database);
-  database.prepare(`INSERT INTO users
+  database
+    .prepare(
+      `INSERT INTO users
     (id, username, display_name, password_hash, role, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'admin', ?, ?)`)
-    .run("user-1", "admin", "SPARK Administrator", "test-hash", "2026-09-22T00:00:00.000Z", "2026-09-22T00:00:00.000Z");
+    VALUES (?, ?, ?, ?, 'admin', ?, ?)`
+    )
+    .run(
+      "user-1",
+      "admin",
+      "SPARK Administrator",
+      "test-hash",
+      "2026-09-22T00:00:00.000Z",
+      "2026-09-22T00:00:00.000Z"
+    );
 });
 
 afterEach(() => {
@@ -49,18 +59,24 @@ describe("activity repository", () => {
 
     const events = listActivity(database);
     expect(events).toHaveLength(2);
-    expect(events[0]).toEqual(expect.objectContaining({
-      action: "recovery_check",
-      outcome: "failure",
-      actorType: "system",
-    }));
-    expect(events[1]).toEqual(expect.objectContaining({
-      action: "file_upload",
-      actorUsername: "admin",
-      paths: ["Shared/report.pdf"],
-      metadata: { size: 42 },
-    }));
-    expect(database.prepare("SELECT count(*) count FROM activity_events").get()).toEqual({ count: 2 });
+    expect(events[0]).toEqual(
+      expect.objectContaining({
+        action: "recovery_check",
+        outcome: "failure",
+        actorType: "system",
+      })
+    );
+    expect(events[1]).toEqual(
+      expect.objectContaining({
+        action: "file_upload",
+        actorUsername: "admin",
+        paths: ["Shared/report.pdf"],
+        metadata: { size: 42 },
+      })
+    );
+    expect(
+      database.prepare("SELECT count(*) count FROM activity_events").get()
+    ).toEqual({ count: 2 });
   });
 
   it("bounds the requested page size", () => {

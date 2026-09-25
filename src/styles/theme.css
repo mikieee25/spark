@@ -33,10 +33,12 @@
   --chart-muted: var(--ink-muted);
   --chart-neutral: var(--line);
 }
-:root[data-theme="light"], .light {
+:root[data-theme="light"],
+.light {
   color-scheme: light;
 }
-.dark, :root[data-theme="dark"] {
+.dark,
+:root[data-theme="dark"] {
   color-scheme: dark;
   --canvas: #07111f;
   --canvas-deep: #0e1d3b;

@@ -13,7 +13,12 @@ describe("filesFromDropItems", () => {
       file: (resolve: (file: File) => void) => resolve(file),
     };
     let read = false;
-    const reader = { readEntries: (resolve: (entries: typeof dropped[]) => void) => { resolve(read ? [] : [dropped]); read = true; } };
+    const reader = {
+      readEntries: (resolve: (entries: (typeof dropped)[]) => void) => {
+        resolve(read ? [] : [dropped]);
+        read = true;
+      },
+    };
     const directory = {
       kind: "file",
       getAsFile: () => null,
@@ -26,13 +31,20 @@ describe("filesFromDropItems", () => {
       }),
     } as unknown as DataTransferItem;
 
-    await expect(filesFromDropItems([directory])).resolves.toEqual([{ file, relativePath: "Reports/2026/brief.txt" }]);
+    await expect(filesFromDropItems([directory])).resolves.toEqual([
+      { file, relativePath: "Reports/2026/brief.txt" },
+    ]);
   });
 
   it("falls back to ordinary dropped files when directory entries are unavailable", async () => {
     const file = new File(["DOE"], "brief.txt");
-    const item = { kind: "file", getAsFile: () => file } as unknown as DataTransferItem;
+    const item = {
+      kind: "file",
+      getAsFile: () => file,
+    } as unknown as DataTransferItem;
 
-    await expect(filesFromDropItems([item])).resolves.toEqual([{ file, relativePath: "brief.txt" }]);
+    await expect(filesFromDropItems([item])).resolves.toEqual([
+      { file, relativePath: "brief.txt" },
+    ]);
   });
 });

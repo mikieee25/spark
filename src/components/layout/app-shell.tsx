@@ -14,7 +14,10 @@ export function AppShell({
   children: ReactNode;
 }) {
   return (
-    <div data-app-shell className="min-h-screen md:grid md:grid-cols-[16rem_1fr]">
+    <div
+      data-app-shell
+      className="min-h-screen md:grid md:grid-cols-[16rem_1fr]"
+    >
       <Sidebar user={user} />
       <div data-app-content className="min-w-0">
         <header

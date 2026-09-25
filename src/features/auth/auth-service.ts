@@ -13,7 +13,7 @@ function recordAuthenticationFailure(
   database: Database.Database,
   userId: string | null,
   errorCode: string,
-  now: Date,
+  now: Date
 ): void {
   recordActivity(database, {
     actorUserId: userId,
@@ -30,9 +30,10 @@ export async function authenticate(
   database: Database.Database,
   username: string,
   password: string,
-  now: Date,
+  now: Date
 ): Promise<AuthResult> {
-  const user = database.prepare("SELECT * FROM users WHERE username = ? COLLATE NOCASE")
+  const user = database
+    .prepare("SELECT * FROM users WHERE username = ? COLLATE NOCASE")
     .get(username.trim()) as UserRecord | undefined;
 
   if (!user) {
@@ -45,25 +46,35 @@ export async function authenticate(
     recordAuthenticationFailure(database, user.id, "ACCOUNT_DISABLED", now);
     return { ok: false, reason: "disabled" };
   }
-  if (user.locked_until && new Date(user.locked_until).getTime() > now.getTime()) {
+  if (
+    user.locked_until &&
+    new Date(user.locked_until).getTime() > now.getTime()
+  ) {
     recordAuthenticationFailure(database, user.id, "ACCOUNT_LOCKED", now);
     return { ok: false, reason: "locked" };
   }
 
   if (!(await verifyPassword(user.password_hash, password))) {
     const failures = user.failed_login_count + 1;
-    const lockedUntil = failures >= MAX_FAILURES
-      ? new Date(now.getTime() + LOCKOUT_MS).toISOString()
-      : null;
-    database.prepare(`UPDATE users
-      SET failed_login_count = ?, locked_until = ?, updated_at = ? WHERE id = ?`)
+    const lockedUntil =
+      failures >= MAX_FAILURES
+        ? new Date(now.getTime() + LOCKOUT_MS).toISOString()
+        : null;
+    database
+      .prepare(
+        `UPDATE users
+      SET failed_login_count = ?, locked_until = ?, updated_at = ? WHERE id = ?`
+      )
       .run(failures, lockedUntil, now.toISOString(), user.id);
     recordAuthenticationFailure(database, user.id, "INVALID_CREDENTIALS", now);
     return { ok: false, reason: "invalid_credentials" };
   }
 
-  database.prepare(`UPDATE users
-    SET failed_login_count = 0, locked_until = NULL, updated_at = ? WHERE id = ?`)
+  database
+    .prepare(
+      `UPDATE users
+    SET failed_login_count = 0, locked_until = NULL, updated_at = ? WHERE id = ?`
+    )
     .run(now.toISOString(), user.id);
   recordActivity(database, {
     actorUserId: user.id,

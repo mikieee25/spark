@@ -8,13 +8,20 @@ export default function globalTeardown(): void {
   if (!fs.existsSync(stateFile)) return;
   const target = path.resolve(fs.readFileSync(stateFile, "utf8").trim());
   const tempRoot = path.resolve(os.tmpdir()) + path.sep;
-  if (!target.startsWith(tempRoot) || !path.basename(target).startsWith("spark-e2e-")) {
+  if (
+    !target.startsWith(tempRoot) ||
+    !path.basename(target).startsWith("spark-e2e-")
+  ) {
     throw new Error(`Refusing unsafe E2E cleanup target: ${target}`);
   }
   fs.rmSync(stateFile, { force: true });
-  const cleanup = spawn(process.execPath, [path.resolve("scripts/cleanup-e2e.mjs"), target], {
-    detached: true,
-    stdio: "ignore",
-  });
+  const cleanup = spawn(
+    process.execPath,
+    [path.resolve("scripts/cleanup-e2e.mjs"), target],
+    {
+      detached: true,
+      stdio: "ignore",
+    }
+  );
   cleanup.unref();
 }

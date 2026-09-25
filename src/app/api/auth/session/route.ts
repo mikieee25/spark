@@ -7,6 +7,9 @@ export async function GET(): Promise<Response> {
   const user = await getCurrentUser();
   return NextResponse.json(
     { user },
-    { status: user ? 200 : 401, headers: { "Cache-Control": "private, no-store" } },
+    {
+      status: user ? 200 : 401,
+      headers: { "Cache-Control": "private, no-store" },
+    }
   );
 }

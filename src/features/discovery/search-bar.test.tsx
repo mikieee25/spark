@@ -22,7 +22,10 @@ describe("SearchBar", () => {
     const onSearch = vi.fn();
     render(<SearchBar onSearch={onSearch} />);
 
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search workspace" }), { target: { value: "budget" } });
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search workspace" }),
+      { target: { value: "budget" } }
+    );
     expect(onSearch).not.toHaveBeenCalled();
     vi.advanceTimersByTime(300);
 
@@ -32,9 +35,18 @@ describe("SearchBar", () => {
   it("submits an explicit folder scope", () => {
     const onSearch = vi.fn();
     render(<SearchBar onSearch={onSearch} />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Search item type" }), { target: { value: "folder" } });
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search workspace" }), { target: { value: "reports" } });
-    fireEvent.keyDown(screen.getByRole("searchbox", { name: "Search workspace" }), { key: "Enter" });
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Search item type" }),
+      { target: { value: "folder" } }
+    );
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search workspace" }),
+      { target: { value: "reports" } }
+    );
+    fireEvent.keyDown(
+      screen.getByRole("searchbox", { name: "Search workspace" }),
+      { key: "Enter" }
+    );
     expect(onSearch).toHaveBeenCalledWith("reports", "folder");
   });
 });

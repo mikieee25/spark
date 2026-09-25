@@ -23,9 +23,12 @@ beforeEach(() => {
   migrate(database);
   userId = randomUUID();
   const now = new Date().toISOString();
-  database.prepare(`INSERT INTO users
+  database
+    .prepare(
+      `INSERT INTO users
     (id, username, display_name, password_hash, role, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
     .run(userId, "admin", "Administrator", "unused", "admin", now, now);
 });
 
@@ -36,24 +39,30 @@ afterEach(() => {
 
 describe("sessions", () => {
   it("stores only the SHA-256 token hash", () => {
-    const session = createSession(database, userId, new Date("2026-09-21T00:00:00Z"));
+    const session = createSession(
+      database,
+      userId,
+      new Date("2026-09-21T00:00:00Z")
+    );
     const stored = database.prepare("SELECT id_hash FROM sessions").get() as {
       id_hash: string;
     };
     expect(stored.id_hash).not.toBe(session.token);
     expect(stored.id_hash).toBe(
-      createHash("sha256").update(session.token).digest("hex"),
+      createHash("sha256").update(session.token).digest("hex")
     );
   });
 
   it("resolves active sessions but rejects expired and revoked sessions", () => {
     const now = new Date("2026-09-21T00:00:00Z");
     const active = createSession(database, userId, now);
-    expect(resolveSession(database, active.token, new Date("2026-09-21T01:00:00Z")))
-      .toMatchObject({ username: "admin", role: "admin" });
+    expect(
+      resolveSession(database, active.token, new Date("2026-09-21T01:00:00Z"))
+    ).toMatchObject({ username: "admin", role: "admin" });
 
-    expect(resolveSession(database, active.token, new Date("2026-09-22T00:00:01Z")))
-      .toBeNull();
+    expect(
+      resolveSession(database, active.token, new Date("2026-09-22T00:00:01Z"))
+    ).toBeNull();
 
     const revoked = createSession(database, userId, now);
     revokeSession(database, revoked.token, now);
@@ -61,8 +70,16 @@ describe("sessions", () => {
   });
 
   it("returns forced-password-change state from the account", () => {
-    database.prepare("UPDATE users SET must_change_password = 1 WHERE id = ?").run(userId);
-    const session = createSession(database, userId, new Date("2026-09-21T00:00:00Z"));
-    expect(resolveSession(database, session.token, new Date("2026-09-21T00:01:00Z"))).toMatchObject({ mustChangePassword: true });
+    database
+      .prepare("UPDATE users SET must_change_password = 1 WHERE id = ?")
+      .run(userId);
+    const session = createSession(
+      database,
+      userId,
+      new Date("2026-09-21T00:00:00Z")
+    );
+    expect(
+      resolveSession(database, session.token, new Date("2026-09-21T00:01:00Z"))
+    ).toMatchObject({ mustChangePassword: true });
   });
 });

@@ -5,7 +5,10 @@ describe("directory list cache", () => {
   it("expires entries and invalidates paths", () => {
     vi.useFakeTimers();
     try {
-      const cache = createDirectoryListCache<string[]>({ ttlMs: 1_000, maxEntries: 2 });
+      const cache = createDirectoryListCache<string[]>({
+        ttlMs: 1_000,
+        maxEntries: 2,
+      });
       cache.set("Reports", "v1", ["a"]);
       expect(cache.get("Reports", "v1")).toEqual(["a"]);
       expect(cache.get("Reports", "v2")).toBeUndefined();
@@ -20,7 +23,10 @@ describe("directory list cache", () => {
   });
 
   it("bounds capacity using least-recently-used eviction", () => {
-    const cache = createDirectoryListCache<string[]>({ ttlMs: 1_000, maxEntries: 2 });
+    const cache = createDirectoryListCache<string[]>({
+      ttlMs: 1_000,
+      maxEntries: 2,
+    });
     cache.set("a", "1", ["a"]);
     cache.set("b", "1", ["b"]);
     expect(cache.get("a", "1")).toEqual(["a"]);

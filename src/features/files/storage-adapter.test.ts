@@ -20,110 +20,209 @@ afterEach(async () => {
 
 describe("storage adapter", () => {
   it("lists contained entries and stages an upload", async () => {
-    const adapter = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    const adapter = createStorageAdapter({
+      filesRoot: root,
+      dataDirectory: data,
+    });
     await adapter.createDirectory("Reports");
     const staged = await adapter.stageUpload("note.txt", Buffer.from("DOE"));
     await adapter.commitStagedFile(staged, "Reports/note.txt");
 
-    expect((await adapter.list(""))[0]).toEqual(expect.objectContaining({ name: "Reports", kind: "folder" }));
-    expect(await fs.readFile(path.join(root, "Reports", "note.txt"), "utf8")).toBe("DOE");
+    expect((await adapter.list(""))[0]).toEqual(
+      expect.objectContaining({ name: "Reports", kind: "folder" })
+    );
+    expect(
+      await fs.readFile(path.join(root, "Reports", "note.txt"), "utf8")
+    ).toBe("DOE");
   });
 
   it("keeps listings fast while retaining recursive sizes for explicit stats", async () => {
     await fs.mkdir(path.join(root, "Reports", "2026"), { recursive: true });
     await fs.writeFile(path.join(root, "Reports", "brief.txt"), "DOE");
-    await fs.writeFile(path.join(root, "Reports", "2026", "budget.bin"), Buffer.alloc(5));
-    const adapter = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    await fs.writeFile(
+      path.join(root, "Reports", "2026", "budget.bin"),
+      Buffer.alloc(5)
+    );
+    const adapter = createStorageAdapter({
+      filesRoot: root,
+      dataDirectory: data,
+    });
 
     await expect(adapter.list("")).resolves.toEqual([
-      expect.objectContaining({ name: "Reports", kind: "folder", sizeBytes: 0 }),
+      expect.objectContaining({
+        name: "Reports",
+        kind: "folder",
+        sizeBytes: 0,
+      }),
     ]);
     await expect(adapter.list("Reports")).resolves.toEqual([
       expect.objectContaining({ name: "2026", kind: "folder", sizeBytes: 0 }),
-      expect.objectContaining({ name: "brief.txt", kind: "file", sizeBytes: 3 }),
+      expect.objectContaining({
+        name: "brief.txt",
+        kind: "file",
+        sizeBytes: 3,
+      }),
     ]);
-    await expect(adapter.stat("Reports")).resolves.toEqual(expect.objectContaining({ kind: "folder", sizeBytes: 8 }));
+    await expect(adapter.stat("Reports")).resolves.toEqual(
+      expect.objectContaining({ kind: "folder", sizeBytes: 8 })
+    );
   });
 
   it("deduplicates concurrent cached listings for the same folder", async () => {
     await fs.writeFile(path.join(root, "note.txt"), "note");
-    const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    const storage = createStorageAdapter({
+      filesRoot: root,
+      dataDirectory: data,
+    });
 
-    const [first, second] = await Promise.all([storage.list(""), storage.list("")]);
+    const [first, second] = await Promise.all([
+      storage.list(""),
+      storage.list(""),
+    ]);
 
     expect(first).toBe(second);
   });
 
   it("reports listing phases without exposing filesystem paths", async () => {
     await fs.writeFile(path.join(root, "note.txt"), "note");
-    const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    const storage = createStorageAdapter({
+      filesRoot: root,
+      dataDirectory: data,
+    });
     let timing: Record<string, unknown> | undefined;
 
-    await storage.list("", { cache: false, onTiming: (value) => { timing = value as Record<string, unknown>; } });
+    await storage.list("", {
+      cache: false,
+      onTiming: (value) => {
+        timing = value as Record<string, unknown>;
+      },
+    });
 
-    expect(timing).toEqual(expect.objectContaining({ cache: "bypass", entryCount: 1 }));
-    for (const key of ["pathValidationMs", "directoryStatMs", "readdirMs", "metadataMs", "sortMs"]) {
+    expect(timing).toEqual(
+      expect.objectContaining({ cache: "bypass", entryCount: 1 })
+    );
+    for (const key of [
+      "pathValidationMs",
+      "directoryStatMs",
+      "readdirMs",
+      "metadataMs",
+      "sortMs",
+    ]) {
       expect(timing?.[key]).toEqual(expect.any(Number));
     }
   });
 
   it("reports root and per-ancestor symlink check timings", async () => {
     await fs.mkdir(path.join(root, "Reports", "2026"), { recursive: true });
-    const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    const storage = createStorageAdapter({
+      filesRoot: root,
+      dataDirectory: data,
+    });
     let timing: Record<string, unknown> | undefined;
 
-    await storage.list("Reports/2026", { cache: false, onTiming: (value) => { timing = value as Record<string, unknown>; } });
+    await storage.list("Reports/2026", {
+      cache: false,
+      onTiming: (value) => {
+        timing = value as Record<string, unknown>;
+      },
+    });
 
-    expect(timing?.symlinkCheck).toEqual(expect.objectContaining({
-      rootLstatMs: expect.any(Number),
-      segmentLstatsMs: expect.any(Number),
-      segmentCount: 2,
-      slowestSegmentLstatMs: expect.any(Number),
-      slowestSegmentIndex: expect.any(Number),
-    }));
+    expect(timing?.symlinkCheck).toEqual(
+      expect.objectContaining({
+        rootLstatMs: expect.any(Number),
+        segmentLstatsMs: expect.any(Number),
+        segmentCount: 2,
+        slowestSegmentLstatMs: expect.any(Number),
+        slowestSegmentIndex: expect.any(Number),
+      })
+    );
   });
 
   it("checks the configured root once per adapter but still checks each path segment", async () => {
     await fs.mkdir(path.join(root, "Reports", "2026"), { recursive: true });
-    const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    const storage = createStorageAdapter({
+      filesRoot: root,
+      dataDirectory: data,
+    });
     const timings: Array<Record<string, unknown>> = [];
 
-    await storage.list("Reports", { cache: false, onTiming: (value) => timings.push(value as unknown as Record<string, unknown>) });
-    await storage.list("Reports/2026", { cache: false, onTiming: (value) => timings.push(value as unknown as Record<string, unknown>) });
+    await storage.list("Reports", {
+      cache: false,
+      onTiming: (value) =>
+        timings.push(value as unknown as Record<string, unknown>),
+    });
+    await storage.list("Reports/2026", {
+      cache: false,
+      onTiming: (value) =>
+        timings.push(value as unknown as Record<string, unknown>),
+    });
 
-    expect(timings[0].symlinkCheck).toEqual(expect.objectContaining({ rootLstatMs: expect.any(Number), segmentCount: 1 }));
-    expect(timings[1].symlinkCheck).toEqual(expect.objectContaining({ rootLstatMs: 0, segmentCount: 2 }));
+    expect(timings[0].symlinkCheck).toEqual(
+      expect.objectContaining({
+        rootLstatMs: expect.any(Number),
+        segmentCount: 1,
+      })
+    );
+    expect(timings[1].symlinkCheck).toEqual(
+      expect.objectContaining({ rootLstatMs: 0, segmentCount: 2 })
+    );
   });
 
   it("rejects a symlinked configured root", async () => {
     const linkedRoot = path.join(data, "linked-root");
     await fs.symlink(root, linkedRoot, "junction");
-    const storage = createStorageAdapter({ filesRoot: linkedRoot, dataDirectory: data });
+    const storage = createStorageAdapter({
+      filesRoot: linkedRoot,
+      dataDirectory: data,
+    });
 
     await expect(storage.list("")).rejects.toThrow("SYMLINK_NOT_ALLOWED");
   });
 
   it("reports cache misses and hits without repeating child metadata work", async () => {
     await fs.writeFile(path.join(root, "note.txt"), "note");
-    const storage = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    const storage = createStorageAdapter({
+      filesRoot: root,
+      dataDirectory: data,
+    });
     const timings: Array<Record<string, unknown>> = [];
 
-    await storage.list("", { onTiming: (value) => timings.push(value as Record<string, unknown>) });
-    await storage.list("", { onTiming: (value) => timings.push(value as Record<string, unknown>) });
+    await storage.list("", {
+      onTiming: (value) => timings.push(value as Record<string, unknown>),
+    });
+    await storage.list("", {
+      onTiming: (value) => timings.push(value as Record<string, unknown>),
+    });
 
     expect(timings.map((value) => value.cache)).toEqual(["miss", "hit"]);
-    expect(timings[1]).toEqual(expect.objectContaining({ readdirMs: 0, metadataMs: 0, sortMs: 0, entryCount: 1 }));
+    expect(timings[1]).toEqual(
+      expect.objectContaining({
+        readdirMs: 0,
+        metadataMs: 0,
+        sortMs: 0,
+        entryCount: 1,
+      })
+    );
   });
 
   it("rejects symlinks even when the lexical path is contained", async () => {
     const outside = path.join(data, "outside.txt");
     await fs.writeFile(outside, "private");
     await fs.symlink(outside, path.join(root, "linked.txt"));
-    const adapter = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    const adapter = createStorageAdapter({
+      filesRoot: root,
+      dataDirectory: data,
+    });
 
-    await expect(adapter.stat("linked.txt")).rejects.toThrow("SYMLINK_NOT_ALLOWED");
-    await expect(adapter.readRange("linked.txt", 0, 1)).rejects.toThrow("SYMLINK_NOT_ALLOWED");
-    await expect(adapter.openReadStream("linked.txt")).rejects.toThrow("SYMLINK_NOT_ALLOWED");
+    await expect(adapter.stat("linked.txt")).rejects.toThrow(
+      "SYMLINK_NOT_ALLOWED"
+    );
+    await expect(adapter.readRange("linked.txt", 0, 1)).rejects.toThrow(
+      "SYMLINK_NOT_ALLOWED"
+    );
+    await expect(adapter.openReadStream("linked.txt")).rejects.toThrow(
+      "SYMLINK_NOT_ALLOWED"
+    );
   });
 
   it("rejects symlinked directory ancestors while listing", async () => {
@@ -131,23 +230,42 @@ describe("storage adapter", () => {
     await fs.mkdir(outside);
     await fs.writeFile(path.join(outside, "secret.txt"), "private");
     await fs.symlink(outside, path.join(root, "linked-directory"), "junction");
-    const adapter = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    const adapter = createStorageAdapter({
+      filesRoot: root,
+      dataDirectory: data,
+    });
 
-    await expect(adapter.list("linked-directory")).rejects.toThrow("SYMLINK_NOT_ALLOWED");
+    await expect(adapter.list("linked-directory")).rejects.toThrow(
+      "SYMLINK_NOT_ALLOWED"
+    );
   });
 
   it("rejects directories as ranged or streamed files", async () => {
     await fs.mkdir(path.join(root, "folder"));
-    const adapter = createStorageAdapter({ filesRoot: root, dataDirectory: data });
-    await expect(adapter.readRange("folder", 0, 0)).rejects.toThrow("UNSUPPORTED_ENTRY");
-    await expect(adapter.openReadStream("folder")).rejects.toThrow("UNSUPPORTED_ENTRY");
+    const adapter = createStorageAdapter({
+      filesRoot: root,
+      dataDirectory: data,
+    });
+    await expect(adapter.readRange("folder", 0, 0)).rejects.toThrow(
+      "UNSUPPORTED_ENTRY"
+    );
+    await expect(adapter.openReadStream("folder")).rejects.toThrow(
+      "UNSUPPORTED_ENTRY"
+    );
   });
 
   it("reads a bounded byte range without following symlinks", async () => {
     await fs.writeFile(path.join(root, "range.txt"), "0123456789");
-    const adapter = createStorageAdapter({ filesRoot: root, dataDirectory: data });
+    const adapter = createStorageAdapter({
+      filesRoot: root,
+      dataDirectory: data,
+    });
 
-    await expect(adapter.readRange("range.txt", 2, 5)).resolves.toEqual(Buffer.from("2345"));
-    await expect(adapter.readRange("range.txt", 9, 9)).resolves.toEqual(Buffer.from("9"));
+    await expect(adapter.readRange("range.txt", 2, 5)).resolves.toEqual(
+      Buffer.from("2345")
+    );
+    await expect(adapter.readRange("range.txt", 9, 9)).resolves.toEqual(
+      Buffer.from("9")
+    );
   });
 });

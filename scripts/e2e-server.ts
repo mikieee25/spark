@@ -12,7 +12,11 @@ const dataDirectory = path.join(root, "data");
 const filesRoot = path.join(root, "files");
 fs.mkdirSync(dataDirectory);
 fs.mkdirSync(filesRoot);
-fs.writeFileSync(path.join(filesRoot, "search-fixture.txt"), "DOE SPARK search fixture", "utf8");
+fs.writeFileSync(
+  path.join(filesRoot, "search-fixture.txt"),
+  "DOE SPARK search fixture",
+  "utf8"
+);
 
 const database = openDatabase(path.join(dataDirectory, "spark.db"));
 migrate(database);
@@ -37,7 +41,7 @@ const child = spawn(
       SPARK_SESSION_SECRET: "e2e-only-session-secret-0123456789",
       SPARK_TRUST_PROXY: "false",
     },
-  },
+  }
 );
 
 function stop(): void {

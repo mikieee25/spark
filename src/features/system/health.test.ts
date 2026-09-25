@@ -23,10 +23,12 @@ describe("system health", () => {
   });
 
   it("is ready only when every dependency is ready", () => {
-    expect(checkReadiness({
-      database: () => true,
-      dataDirectory: () => true,
-      filesRoot: () => true,
-    }).ok).toBe(true);
+    expect(
+      checkReadiness({
+        database: () => true,
+        dataDirectory: () => true,
+        filesRoot: () => true,
+      }).ok
+    ).toBe(true);
   });
 });

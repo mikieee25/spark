@@ -213,7 +213,7 @@ export function migrate(database: Database.Database): void {
     database
       .prepare("SELECT version FROM schema_migrations")
       .all()
-      .map((row) => (row as { version: number }).version),
+      .map((row) => (row as { version: number }).version)
   );
 
   for (const migration of migrations) {
@@ -222,13 +222,18 @@ export function migrate(database: Database.Database): void {
       database.transaction(() => {
         database.exec(migration.sql);
         database
-          .prepare("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+          .prepare(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)"
+          )
           .run(migration.version, new Date().toISOString());
       })();
     } catch (error) {
-      throw new Error(`Failed to apply database migration ${migration.version}`, {
-        cause: error,
-      });
+      throw new Error(
+        `Failed to apply database migration ${migration.version}`,
+        {
+          cause: error,
+        }
+      );
     }
   }
 }

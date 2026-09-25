@@ -1,15 +1,44 @@
 import fs from "node:fs";
-import { mkdir, lstat, open, readdir, readFile, realpath, rename, rm, stat as statAsync, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  lstat,
+  open,
+  readdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  stat as statAsync,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { isContained, isSafeStorageName, normalizeLogicalPath, validateName } from "./path-policy";
+import {
+  isContained,
+  isSafeStorageName,
+  normalizeLogicalPath,
+  validateName,
+} from "./path-policy";
 import { mapWithConcurrency } from "@/lib/async/map-with-concurrency";
 import { createDirectoryListCache } from "./directory-list-cache";
 
-export type StorageAdapterConfig = Readonly<{ filesRoot: string; dataDirectory: string }>;
-export type StorageEntry = Readonly<{ name: string; logicalPath: string; kind: "file" | "folder"; sizeBytes: number; modifiedAt: string }>;
+export type StorageAdapterConfig = Readonly<{
+  filesRoot: string;
+  dataDirectory: string;
+}>;
+export type StorageEntry = Readonly<{
+  name: string;
+  logicalPath: string;
+  kind: "file" | "folder";
+  sizeBytes: number;
+  modifiedAt: string;
+}>;
 export type StorageStat = StorageEntry;
-export type StagedUpload = Readonly<{ key: string; name: string; sizeBytes: number }>;
+export type StagedUpload = Readonly<{
+  key: string;
+  name: string;
+  sizeBytes: number;
+}>;
 type SymlinkCheckTiming = Readonly<{
   rootLstatMs: number;
   segmentLstatsMs: number;
@@ -27,7 +56,10 @@ export type StorageListTiming = Readonly<{
   sortMs: number;
   entryCount: number;
 }>;
-export type StorageListOptions = Readonly<{ cache?: boolean; onTiming?: (timing: StorageListTiming) => void }>;
+export type StorageListOptions = Readonly<{
+  cache?: boolean;
+  onTiming?: (timing: StorageListTiming) => void;
+}>;
 export const MAX_STORAGE_RANGE_BYTES = 8 * 1024 * 1024;
 // Match the reference explorer's interactive listing fan-out. Background
 // index scans can opt into a lower value once fileserver measurements justify it.
@@ -52,46 +84,79 @@ export type StorageAdapter = Readonly<{
 }>;
 
 function isMissing(error: unknown): boolean {
-  return error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT";
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
 }
 
-function privateKeyPath(dataDirectory: string, area: "staging" | "recycle" | "versions", key: string): string {
+function privateKeyPath(
+  dataDirectory: string,
+  area: "staging" | "recycle" | "versions",
+  key: string
+): string {
   const normalized = key.replaceAll("\\", "/");
-  if (!normalized || normalized.split("/").some((segment) => !segment || segment === "." || segment === "..")) {
+  if (
+    !normalized ||
+    normalized
+      .split("/")
+      .some((segment) => !segment || segment === "." || segment === "..")
+  ) {
     throw new Error("INVALID_PRIVATE_KEY");
   }
   const result = path.resolve(dataDirectory, area, ...normalized.split("/"));
-  if (!isContained(path.resolve(dataDirectory, area), result)) throw new Error("INVALID_PRIVATE_KEY");
+  if (!isContained(path.resolve(dataDirectory, area), result))
+    throw new Error("INVALID_PRIVATE_KEY");
   return result;
 }
 
-export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapter {
+export function createStorageAdapter(
+  config: StorageAdapterConfig
+): StorageAdapter {
   const root = path.resolve(config.filesRoot);
   const dataDirectory = path.resolve(config.dataDirectory);
-  const listCache = createDirectoryListCache<StorageEntry[]>({ ttlMs: 3_000, maxEntries: 128 });
+  const listCache = createDirectoryListCache<StorageEntry[]>({
+    ttlMs: 3_000,
+    maxEntries: 128,
+  });
   const inFlightLists = new Map<string, Promise<StorageEntry[]>>();
   // The configured mount root is fixed for this adapter's lifetime; descendants are still checked per request.
   let rootValidation: Promise<void> | undefined;
   function resolveLogical(logicalPath: string): string {
     const normalized = normalizeLogicalPath(logicalPath);
-    const candidate = path.resolve(root, ...normalized ? normalized.split("/") : []);
+    const candidate = path.resolve(
+      root,
+      ...(normalized ? normalized.split("/") : [])
+    );
     if (!isContained(root, candidate)) throw new Error("INVALID_PATH");
     return candidate;
   }
 
-  async function assertNoSymlinks(candidate: string, onTiming?: (timing: SymlinkCheckTiming) => void): Promise<void> {
+  async function assertNoSymlinks(
+    candidate: string,
+    onTiming?: (timing: SymlinkCheckTiming) => void
+  ): Promise<void> {
     const relative = path.relative(root, candidate);
     const segments = relative ? relative.split(path.sep) : [];
     let current = root;
-    const timing = { rootLstatMs: 0, segmentLstatsMs: 0, segmentCount: 0, slowestSegmentLstatMs: 0, slowestSegmentIndex: 0 };
+    const timing = {
+      rootLstatMs: 0,
+      segmentLstatsMs: 0,
+      segmentCount: 0,
+      slowestSegmentLstatMs: 0,
+      slowestSegmentIndex: 0,
+    };
     if (!rootValidation) {
       const rootStartedAt = performance.now();
-      rootValidation = lstat(root).then((rootStat) => {
-        if (rootStat.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
-      }).catch((error: unknown) => {
-        rootValidation = undefined;
-        throw error;
-      });
+      rootValidation = lstat(root)
+        .then((rootStat) => {
+          if (rootStat.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
+        })
+        .catch((error: unknown) => {
+          rootValidation = undefined;
+          throw error;
+        });
       await rootValidation;
       timing.rootLstatMs = performance.now() - rootStartedAt;
     } else {
@@ -126,28 +191,44 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
     onTiming?.(timing);
   }
 
-  async function resolveExisting(logicalPath: string, onSymlinkTiming?: (timing: SymlinkCheckTiming) => void): Promise<string> {
+  async function resolveExisting(
+    logicalPath: string,
+    onSymlinkTiming?: (timing: SymlinkCheckTiming) => void
+  ): Promise<string> {
     const candidate = resolveLogical(logicalPath);
     await assertNoSymlinks(candidate, onSymlinkTiming);
     return candidate;
   }
 
-  async function openRegular(logicalPath: string): Promise<fs.promises.FileHandle> {
+  async function openRegular(
+    logicalPath: string
+  ): Promise<fs.promises.FileHandle> {
     const target = await resolveExisting(logicalPath);
-    const constants = fs.constants as typeof fs.constants & { O_NOFOLLOW?: number };
+    const constants = fs.constants as typeof fs.constants & {
+      O_NOFOLLOW?: number;
+    };
     const noFollow = constants.O_NOFOLLOW;
     let handle: fs.promises.FileHandle;
     try {
       handle = await open(target, fs.constants.O_RDONLY | (noFollow ?? 0));
     } catch (error) {
-      if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ELOOP") throw new Error("SYMLINK_NOT_ALLOWED");
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ELOOP"
+      )
+        throw new Error("SYMLINK_NOT_ALLOWED");
       throw error;
     }
     try {
       if (!(await handle.stat()).isFile()) throw new Error("UNSUPPORTED_ENTRY");
       if (noFollow === undefined) {
-        const [canonicalRoot, canonicalTarget] = await Promise.all([realpath(root), realpath(target)]);
-        if (!isContained(canonicalRoot, canonicalTarget)) throw new Error("SYMLINK_NOT_ALLOWED");
+        const [canonicalRoot, canonicalTarget] = await Promise.all([
+          realpath(root),
+          realpath(target),
+        ]);
+        if (!isContained(canonicalRoot, canonicalTarget))
+          throw new Error("SYMLINK_NOT_ALLOWED");
       }
       return handle;
     } catch (error) {
@@ -156,17 +237,26 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
     }
   }
 
-  async function ensurePrivate(area: "staging" | "recycle" | "versions", key: string): Promise<string> {
+  async function ensurePrivate(
+    area: "staging" | "recycle" | "versions",
+    key: string
+  ): Promise<string> {
     const target = privateKeyPath(dataDirectory, area, key);
     await mkdir(path.dirname(target), { recursive: true });
     return target;
   }
 
-  async function calculateFolderSizes(logicalPath: string): Promise<Map<string, number>> {
+  async function calculateFolderSizes(
+    logicalPath: string
+  ): Promise<Map<string, number>> {
     const totals = new Map<string, number>();
 
-    async function visit(currentLogicalPath: string, currentDirectory?: string): Promise<number> {
-      const directory = currentDirectory ?? await resolveExisting(currentLogicalPath);
+    async function visit(
+      currentLogicalPath: string,
+      currentDirectory?: string
+    ): Promise<number> {
+      const directory =
+        currentDirectory ?? (await resolveExisting(currentLogicalPath));
       const directoryStat = await lstat(directory);
       if (!directoryStat.isDirectory()) throw new Error("NOT_A_DIRECTORY");
 
@@ -177,9 +267,14 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
         const childPath = path.join(directory, entry.name);
         const childStat = await lstat(childPath);
         if (childStat.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
-        const childLogicalPath = normalizeLogicalPath(currentLogicalPath ? `${currentLogicalPath}/${entry.name}` : entry.name);
+        const childLogicalPath = normalizeLogicalPath(
+          currentLogicalPath
+            ? `${currentLogicalPath}/${entry.name}`
+            : entry.name
+        );
         if (childStat.isFile()) total += childStat.size;
-        else if (childStat.isDirectory()) total += await visit(childLogicalPath, childPath);
+        else if (childStat.isDirectory())
+          total += await visit(childLogicalPath, childPath);
       }
 
       totals.set(normalizeLogicalPath(currentLogicalPath), total);
@@ -190,46 +285,85 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
     return totals;
   }
 
-  async function loadDirectoryList(logicalPath: string, useCache: boolean, onTiming?: (timing: StorageListTiming) => void): Promise<StorageEntry[]> {
+  async function loadDirectoryList(
+    logicalPath: string,
+    useCache: boolean,
+    onTiming?: (timing: StorageListTiming) => void
+  ): Promise<StorageEntry[]> {
     const resolveStartedAt = performance.now();
     let symlinkCheck: SymlinkCheckTiming | undefined;
-    const directory = await resolveExisting(logicalPath, (timing) => { symlinkCheck = timing; });
+    const directory = await resolveExisting(logicalPath, (timing) => {
+      symlinkCheck = timing;
+    });
     const resolveMs = performance.now() - resolveStartedAt;
     const directoryStartedAt = performance.now();
     const directoryStat = await statAsync(directory);
     if (!directoryStat.isDirectory()) throw new Error("NOT_A_DIRECTORY");
     const directoryMs = performance.now() - directoryStartedAt;
     const fingerprint = String(directoryStat.mtimeMs);
-    const cached = useCache ? listCache.get(logicalPath, fingerprint) : undefined;
+    const cached = useCache
+      ? listCache.get(logicalPath, fingerprint)
+      : undefined;
     if (cached) {
-      onTiming?.({ pathValidationMs: resolveMs, symlinkCheck: symlinkCheck!, directoryStatMs: directoryMs, cache: "hit", readdirMs: 0, metadataMs: 0, sortMs: 0, entryCount: cached.length });
+      onTiming?.({
+        pathValidationMs: resolveMs,
+        symlinkCheck: symlinkCheck!,
+        directoryStatMs: directoryMs,
+        cache: "hit",
+        readdirMs: 0,
+        metadataMs: 0,
+        sortMs: 0,
+        entryCount: cached.length,
+      });
       return cached;
     }
     const readdirStartedAt = performance.now();
     const entries = await readdir(directory, { withFileTypes: true });
     const readdirMs = performance.now() - readdirStartedAt;
     const metadataStartedAt = performance.now();
-    const result = (await mapWithConcurrency(entries, LIST_METADATA_CONCURRENCY, async (entry) => {
-      if (!isSafeStorageName(entry.name)) return null;
-      const childPath = path.join(directory, entry.name);
-      if (entry.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
-      const childStat = await lstat(childPath);
-      if (childStat.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
-      if (!childStat.isFile() && !childStat.isDirectory()) return null;
-      const childLogical = normalizeLogicalPath(logicalPath ? `${logicalPath}/${entry.name}` : entry.name);
-      return {
-        name: entry.name,
-        logicalPath: childLogical,
-        kind: childStat.isDirectory() ? "folder" : "file",
-        sizeBytes: childStat.isFile() ? childStat.size : 0,
-        modifiedAt: childStat.mtime.toISOString(),
-      } satisfies StorageEntry;
-    })).filter((entry): entry is StorageEntry => entry !== null);
+    const result = (
+      await mapWithConcurrency(
+        entries,
+        LIST_METADATA_CONCURRENCY,
+        async (entry) => {
+          if (!isSafeStorageName(entry.name)) return null;
+          const childPath = path.join(directory, entry.name);
+          if (entry.isSymbolicLink()) throw new Error("SYMLINK_NOT_ALLOWED");
+          const childStat = await lstat(childPath);
+          if (childStat.isSymbolicLink())
+            throw new Error("SYMLINK_NOT_ALLOWED");
+          if (!childStat.isFile() && !childStat.isDirectory()) return null;
+          const childLogical = normalizeLogicalPath(
+            logicalPath ? `${logicalPath}/${entry.name}` : entry.name
+          );
+          return {
+            name: entry.name,
+            logicalPath: childLogical,
+            kind: childStat.isDirectory() ? "folder" : "file",
+            sizeBytes: childStat.isFile() ? childStat.size : 0,
+            modifiedAt: childStat.mtime.toISOString(),
+          } satisfies StorageEntry;
+        }
+      )
+    ).filter((entry): entry is StorageEntry => entry !== null);
     const metadataMs = performance.now() - metadataStartedAt;
     const sortStartedAt = performance.now();
-    const sorted = result.sort((left, right) => Number(right.kind === "folder") - Number(left.kind === "folder") || left.name.localeCompare(right.name));
+    const sorted = result.sort(
+      (left, right) =>
+        Number(right.kind === "folder") - Number(left.kind === "folder") ||
+        left.name.localeCompare(right.name)
+    );
     const sortMs = performance.now() - sortStartedAt;
-    onTiming?.({ pathValidationMs: resolveMs, symlinkCheck: symlinkCheck!, directoryStatMs: directoryMs, cache: useCache ? "miss" : "bypass", readdirMs, metadataMs, sortMs, entryCount: sorted.length });
+    onTiming?.({
+      pathValidationMs: resolveMs,
+      symlinkCheck: symlinkCheck!,
+      directoryStatMs: directoryMs,
+      cache: useCache ? "miss" : "bypass",
+      readdirMs,
+      metadataMs,
+      sortMs,
+      entryCount: sorted.length,
+    });
     if (useCache) listCache.set(logicalPath, fingerprint, sorted);
     return sorted;
   }
@@ -237,24 +371,34 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
   return {
     async list(logicalPath, options) {
       const normalizedPath = normalizeLogicalPath(logicalPath);
-      if (options?.cache === false) return loadDirectoryList(normalizedPath, false, options?.onTiming);
+      if (options?.cache === false)
+        return loadDirectoryList(normalizedPath, false, options?.onTiming);
       const existing = inFlightLists.get(normalizedPath);
       if (existing) return existing;
-      const pending = loadDirectoryList(normalizedPath, true, options?.onTiming).finally(() => inFlightLists.delete(normalizedPath));
+      const pending = loadDirectoryList(
+        normalizedPath,
+        true,
+        options?.onTiming
+      ).finally(() => inFlightLists.delete(normalizedPath));
       inFlightLists.set(normalizedPath, pending);
       return pending;
     },
     async stat(logicalPath) {
       const target = await resolveExisting(logicalPath);
       const item = await statAsync(target);
-      if (!item.isFile() && !item.isDirectory()) throw new Error("UNSUPPORTED_ENTRY");
-      const folderSizes = item.isDirectory() ? await calculateFolderSizes(logicalPath) : undefined;
+      if (!item.isFile() && !item.isDirectory())
+        throw new Error("UNSUPPORTED_ENTRY");
+      const folderSizes = item.isDirectory()
+        ? await calculateFolderSizes(logicalPath)
+        : undefined;
       const normalizedPath = normalizeLogicalPath(logicalPath);
       return {
         name: path.basename(target),
         logicalPath: normalizedPath,
         kind: item.isDirectory() ? "folder" : "file",
-        sizeBytes: item.isFile() ? item.size : folderSizes?.get(normalizedPath) ?? 0,
+        sizeBytes: item.isFile()
+          ? item.size
+          : (folderSizes?.get(normalizedPath) ?? 0),
         modifiedAt: item.mtime.toISOString(),
       };
     },
@@ -348,10 +492,18 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
       }
       return false;
     },
-    readFile: async (logicalPath) => readFile(await resolveExisting(logicalPath)),
+    readFile: async (logicalPath) =>
+      readFile(await resolveExisting(logicalPath)),
     async readRange(logicalPath, start, end) {
-      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start) throw new Error("INVALID_RANGE");
-      if (end - start + 1 > MAX_STORAGE_RANGE_BYTES) throw new Error("RANGE_TOO_LARGE");
+      if (
+        !Number.isSafeInteger(start) ||
+        !Number.isSafeInteger(end) ||
+        start < 0 ||
+        end < start
+      )
+        throw new Error("INVALID_RANGE");
+      if (end - start + 1 > MAX_STORAGE_RANGE_BYTES)
+        throw new Error("RANGE_TOO_LARGE");
       const handle = await openRegular(logicalPath);
       try {
         const size = (await handle.stat()).size;
@@ -359,7 +511,12 @@ export function createStorageAdapter(config: StorageAdapterConfig): StorageAdapt
         const output = Buffer.allocUnsafe(end - start + 1);
         let offset = 0;
         while (offset < output.length) {
-          const result = await handle.read(output, offset, output.length - offset, start + offset);
+          const result = await handle.read(
+            output,
+            offset,
+            output.length - offset,
+            start + offset
+          );
           if (!result.bytesRead) throw new Error("RANGE_READ_FAILED");
           offset += result.bytesRead;
         }

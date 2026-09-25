@@ -27,7 +27,8 @@ export default async function LoginPage() {
             Secure knowledge. Shared momentum.
           </h1>
           <p className="mt-6 text-lg leading-8 text-slate-300">
-            A local-first home for DOE archives, records, and institutional knowledge.
+            A local-first home for DOE archives, records, and institutional
+            knowledge.
           </p>
         </div>
         <div className="relative flex items-center gap-4">
@@ -48,8 +49,12 @@ export default async function LoginPage() {
       <section className="flex items-center justify-center p-6 sm:p-12">
         <div className="w-full max-w-md rounded-3xl border border-border bg-card p-7 shadow-xl shadow-black/5 sm:p-10 dark:shadow-black/20">
           <BrandLockup />
-          <h2 className="mt-10 text-3xl font-black tracking-tight">Welcome back</h2>
-          <p className="mt-2 text-muted-foreground">Sign in with your local SPARK account.</p>
+          <h2 className="mt-10 text-3xl font-black tracking-tight">
+            Welcome back
+          </h2>
+          <p className="mt-2 text-muted-foreground">
+            Sign in with your local SPARK account.
+          </p>
           <LoginForm />
         </div>
       </section>

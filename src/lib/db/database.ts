@@ -11,6 +11,8 @@ export function openDatabase(databasePath: string): Database.Database {
     database.pragma("busy_timeout = 5000");
     return database;
   } catch (error) {
-    throw new Error(`Unable to open SPARK database at ${databasePath}`, { cause: error });
+    throw new Error(`Unable to open SPARK database at ${databasePath}`, {
+      cause: error,
+    });
   }
 }

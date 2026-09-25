@@ -9,7 +9,8 @@ function unicodeLength(value: string): number {
 }
 
 function lowercaseLetterCount(value: string): number {
-  return Array.from(value).filter((character) => /\p{Ll}/u.test(character)).length;
+  return Array.from(value).filter((character) => /\p{Ll}/u.test(character))
+    .length;
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -23,7 +24,10 @@ export async function hashPassword(password: string): Promise<string> {
   return argon2.hash(password, { type: argon2.argon2id });
 }
 
-export async function verifyPassword(hash: string, password: string): Promise<boolean> {
+export async function verifyPassword(
+  hash: string,
+  password: string
+): Promise<boolean> {
   if (unicodeLength(password) > MAX_PASSWORD_LENGTH) return false;
   try {
     return await argon2.verify(hash, password);

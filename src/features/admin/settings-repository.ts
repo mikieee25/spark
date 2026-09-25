@@ -12,7 +12,12 @@ export type AccessSettings = {
   reason: string | null;
 };
 
-const allowedKeys = new Set<SettingKey>(["require_sign_in", "anonymous_access_expires_at", "anonymous_access_reason", "recycle_retention_days"]);
+const allowedKeys = new Set<SettingKey>([
+  "require_sign_in",
+  "anonymous_access_expires_at",
+  "anonymous_access_reason",
+  "recycle_retention_days",
+]);
 
 type SettingRow = { value_json: string };
 
@@ -23,7 +28,9 @@ function fail(message: string): never {
 }
 
 function read(database: Database.Database, key: SettingKey): unknown {
-  const row = database.prepare("SELECT value_json FROM settings WHERE key = ?").get(key) as SettingRow | undefined;
+  const row = database
+    .prepare("SELECT value_json FROM settings WHERE key = ?")
+    .get(key) as SettingRow | undefined;
   if (!row) fail(`Missing setting: ${key}`);
   try {
     return JSON.parse(row.value_json) as unknown;
@@ -41,12 +48,22 @@ function validate(key: SettingKey, value: unknown): void {
       fail("anonymous_access_expires_at must be an ISO date or null");
     }
   }
-  if (key === "anonymous_access_reason" && value !== null &&
-      (typeof value !== "string" || value.length > 500)) {
-    fail("anonymous_access_reason must be a string up to 500 characters or null");
+  if (
+    key === "anonymous_access_reason" &&
+    value !== null &&
+    (typeof value !== "string" || value.length > 500)
+  ) {
+    fail(
+      "anonymous_access_reason must be a string up to 500 characters or null"
+    );
   }
-  if (key === "recycle_retention_days" &&
-      (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 365)) {
+  if (
+    key === "recycle_retention_days" &&
+    (typeof value !== "number" ||
+      !Number.isInteger(value) ||
+      value < 1 ||
+      value > 365)
+  ) {
     fail("recycle_retention_days must be an integer from 1 to 365");
   }
 }
@@ -56,13 +73,17 @@ export function setSetting(
   key: SettingKey,
   value: unknown,
   updatedBy: string | null,
-  now = new Date(),
+  now = new Date()
 ): void {
   if (!allowedKeys.has(key)) fail(`Unknown setting: ${String(key)}`);
   validate(key, value);
-  const result = database.prepare(`UPDATE settings
+  const result = database
+    .prepare(
+      `UPDATE settings
     SET value_json = ?, updated_at = ?, updated_by = ?
-    WHERE key = ?`).run(JSON.stringify(value), now.toISOString(), updatedBy, key);
+    WHERE key = ?`
+    )
+    .run(JSON.stringify(value), now.toISOString(), updatedBy, key);
   if (!result.changes) fail(`Missing setting: ${key}`);
 }
 
@@ -74,7 +95,7 @@ export function getRetentionDays(database: Database.Database): number {
 
 export function getAccessSettings(
   database: Database.Database,
-  now = new Date(),
+  now = new Date()
 ): AccessSettings {
   const requireSignIn = read(database, "require_sign_in");
   validate("require_sign_in", requireSignIn);
@@ -83,7 +104,11 @@ export function getAccessSettings(
   validate("anonymous_access_expires_at", expiry);
   validate("anonymous_access_reason", reason);
 
-  if (requireSignIn || expiry === null || new Date(expiry as string).getTime() <= now.getTime()) {
+  if (
+    requireSignIn ||
+    expiry === null ||
+    new Date(expiry as string).getTime() <= now.getTime()
+  ) {
     return { requireSignIn: true, expiresAt: null, reason: null };
   }
   return {

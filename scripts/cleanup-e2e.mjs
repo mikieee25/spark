@@ -4,7 +4,10 @@ import path from "node:path";
 
 const target = path.resolve(process.argv[2] || "");
 const tempRoot = path.resolve(os.tmpdir()) + path.sep;
-if (!target.startsWith(tempRoot) || !path.basename(target).startsWith("spark-e2e-")) {
+if (
+  !target.startsWith(tempRoot) ||
+  !path.basename(target).startsWith("spark-e2e-")
+) {
   process.exit(2);
 }
 

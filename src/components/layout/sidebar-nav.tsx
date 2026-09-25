@@ -10,13 +10,35 @@ export function SidebarNav({ user }: { user: SessionUser }) {
   const links = [
     { href: "/files", label: "Files" },
     { href: "/recycle", label: "Recycle bin" },
-    ...(user.role === "admin" ? [{ href: "/activity", label: "Activity" }, { href: "/admin", label: "Administration" }] : []),
+    ...(user.role === "admin"
+      ? [
+          { href: "/activity", label: "Activity" },
+          { href: "/admin", label: "Administration" },
+        ]
+      : []),
   ];
   return (
-    <nav aria-label="Primary" className="mt-10 grid gap-2 max-md:mt-5 max-md:grid-cols-2">
+    <nav
+      aria-label="Primary"
+      className="mt-10 grid gap-2 max-md:mt-5 max-md:grid-cols-2"
+    >
       {links.map((link) => {
-        const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
-        return <Link key={link.href} prefetch={false} className={cn("rounded-lg px-4 py-3 text-sm font-medium transition-colors hover:bg-muted", active && "bg-accent font-bold text-primary")} href={link.href} aria-current={active ? "page" : undefined}>{link.label}</Link>;
+        const active =
+          pathname === link.href || pathname.startsWith(`${link.href}/`);
+        return (
+          <Link
+            key={link.href}
+            prefetch={false}
+            className={cn(
+              "rounded-lg px-4 py-3 text-sm font-medium transition-colors hover:bg-muted",
+              active && "bg-accent font-bold text-primary"
+            )}
+            href={link.href}
+            aria-current={active ? "page" : undefined}
+          >
+            {link.label}
+          </Link>
+        );
       })}
     </nav>
   );

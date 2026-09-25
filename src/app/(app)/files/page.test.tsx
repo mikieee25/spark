@@ -9,9 +9,14 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/features/auth/request-auth", () => ({ getCurrentUser: mocks.user }));
-vi.mock("@/features/files/file-runtime", () => ({ getFileService: mocks.service }));
+vi.mock("@/features/files/file-runtime", () => ({
+  getFileService: mocks.service,
+}));
 vi.mock("@/lib/db/runtime", () => ({ getDatabase: mocks.database }));
-vi.mock("@/features/discovery/discovery-repository", () => ({ listFavorites: mocks.favorites, listRecentItems: mocks.recent }));
+vi.mock("@/features/discovery/discovery-repository", () => ({
+  listFavorites: mocks.favorites,
+  listRecentItems: mocks.recent,
+}));
 
 import FilesPage from "./page";
 
@@ -34,7 +39,9 @@ describe("FilesPage", () => {
     mocks.favorites.mockReturnValue([]);
     mocks.recent.mockReturnValue([]);
 
-    const element = await FilesPage({ searchParams: Promise.resolve({ path: "Reports/2026" }) });
+    const element = await FilesPage({
+      searchParams: Promise.resolve({ path: "Reports/2026" }),
+    });
 
     expect(element.props.initialPath).toBe("Reports/2026");
     expect(element.props.initialEntries).toBeNull();
@@ -46,7 +53,9 @@ describe("FilesPage", () => {
     mocks.favorites.mockReturnValue([]);
     mocks.recent.mockReturnValue([]);
 
-    const element = await FilesPage({ searchParams: Promise.resolve({ preview: "Reports/brief.pdf" }) });
+    const element = await FilesPage({
+      searchParams: Promise.resolve({ preview: "Reports/brief.pdf" }),
+    });
 
     expect(element.props.initialPreview).toBe("Reports/brief.pdf");
   });

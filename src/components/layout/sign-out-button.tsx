@@ -11,5 +11,19 @@ export function SignOutButton() {
     router.replace("/login");
     router.refresh();
   }
-  return <Button type="button" variant="outline" size="sm" aria-label="Sign out" className="gap-2" onClick={signOut}><LogOut aria-hidden="true" /><span aria-hidden="true" className="hidden sm:inline">Sign out</span></Button>;
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      aria-label="Sign out"
+      className="gap-2"
+      onClick={signOut}
+    >
+      <LogOut aria-hidden="true" />
+      <span aria-hidden="true" className="hidden sm:inline">
+        Sign out
+      </span>
+    </Button>
+  );
 }

@@ -39,29 +39,45 @@ function tarEntry(name: string, type = "0"): Buffer {
 
 describe("archive preview", () => {
   it("lists safe zip metadata", () => {
-    expect(listArchiveEntries(zipEntry("safe.txt", 4), "zip")).toEqual([{ name: "safe.txt", kind: "file", sizeBytes: 4 }]);
+    expect(listArchiveEntries(zipEntry("safe.txt", 4), "zip")).toEqual([
+      { name: "safe.txt", kind: "file", sizeBytes: 4 },
+    ]);
   });
 
   it("lists bounded zip metadata and rejects traversal names", () => {
-    expect(() => listArchiveEntries(zipEntry("../secret.txt"), "zip")).toThrow("ARCHIVE_UNSAFE_ENTRY");
+    expect(() => listArchiveEntries(zipEntry("../secret.txt"), "zip")).toThrow(
+      "ARCHIVE_UNSAFE_ENTRY"
+    );
   });
 
   it("does not expose tar symlink entries", () => {
-    expect(listArchiveEntries(tarEntry("safe.txt"), "tar")).toEqual([{ name: "safe.txt", kind: "file", sizeBytes: 0 }]);
-    expect(() => listArchiveEntries(tarEntry("link", "2"), "tar")).toThrow("ARCHIVE_UNSAFE_ENTRY");
+    expect(listArchiveEntries(tarEntry("safe.txt"), "tar")).toEqual([
+      { name: "safe.txt", kind: "file", sizeBytes: 0 },
+    ]);
+    expect(() => listArchiveEntries(tarEntry("link", "2"), "tar")).toThrow(
+      "ARCHIVE_UNSAFE_ENTRY"
+    );
   });
 
   it("rejects invalid tar checksums, numeric fields, extension records, and termination", () => {
     const invalidChecksum = tarEntry("safe.txt");
     invalidChecksum[0] ^= 1;
-    expect(() => listArchiveEntries(invalidChecksum, "tar")).toThrow("INVALID_ARCHIVE");
+    expect(() => listArchiveEntries(invalidChecksum, "tar")).toThrow(
+      "INVALID_ARCHIVE"
+    );
 
     const invalidNumber = tarEntry("safe.txt");
     Buffer.from("99999999999\0").copy(invalidNumber, 124);
-    expect(() => listArchiveEntries(invalidNumber, "tar")).toThrow("INVALID_ARCHIVE");
+    expect(() => listArchiveEntries(invalidNumber, "tar")).toThrow(
+      "INVALID_ARCHIVE"
+    );
 
     const extension = tarEntry("long-name", "L");
-    expect(() => listArchiveEntries(extension, "tar")).toThrow("UNSUPPORTED_ARCHIVE");
-    expect(() => listArchiveEntries(tarEntry("safe.txt").subarray(0, 512), "tar")).toThrow("INVALID_ARCHIVE");
+    expect(() => listArchiveEntries(extension, "tar")).toThrow(
+      "UNSUPPORTED_ARCHIVE"
+    );
+    expect(() =>
+      listArchiveEntries(tarEntry("safe.txt").subarray(0, 512), "tar")
+    ).toThrow("INVALID_ARCHIVE");
   });
 });

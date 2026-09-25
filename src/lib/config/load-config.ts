@@ -10,7 +10,10 @@ function requireAbsolute(name: string, value: string): string {
 
 function isInsideOrSame(parent: string, candidate: string): boolean {
   const relative = path.relative(parent, candidate);
-  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  return (
+    relative === "" ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
 }
 
 function parseOrigin(value: string): URL {
@@ -38,20 +41,32 @@ function parseOrigin(value: string): URL {
 function parseConverterUrl(value: string | undefined): URL | null {
   if (!value) return null;
   const url = new URL(value);
-  if (!["http:", "https:"].includes(url.protocol)) throw new Error("SPARK_PREVIEW_CONVERTER_URL must use HTTP(S)");
+  if (!["http:", "https:"].includes(url.protocol))
+    throw new Error("SPARK_PREVIEW_CONVERTER_URL must use HTTP(S)");
   return url;
 }
 
-export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppConfig {
+export function loadConfig(
+  environment: NodeJS.ProcessEnv = process.env
+): AppConfig {
   const parsed = environmentSchema.safeParse(environment);
   if (!parsed.success) {
     throw new Error(`Invalid SPARK configuration: ${parsed.error.message}`);
   }
 
-  const dataDirectory = requireAbsolute("SPARK_DATA_DIR", parsed.data.SPARK_DATA_DIR);
-  const filesRoot = requireAbsolute("SPARK_FILES_ROOT", parsed.data.SPARK_FILES_ROOT);
+  const dataDirectory = requireAbsolute(
+    "SPARK_DATA_DIR",
+    parsed.data.SPARK_DATA_DIR
+  );
+  const filesRoot = requireAbsolute(
+    "SPARK_FILES_ROOT",
+    parsed.data.SPARK_FILES_ROOT
+  );
 
-  if (isInsideOrSame(filesRoot, dataDirectory) || isInsideOrSame(dataDirectory, filesRoot)) {
+  if (
+    isInsideOrSame(filesRoot, dataDirectory) ||
+    isInsideOrSame(dataDirectory, filesRoot)
+  ) {
     throw new Error("SPARK_DATA_DIR must remain outside SPARK_FILES_ROOT");
   }
 
@@ -63,6 +78,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): AppCon
     sessionSecret: parsed.data.SPARK_SESSION_SECRET,
     trustProxy: parsed.data.SPARK_TRUST_PROXY === "true",
     terminalEnabled: parsed.data.SPARK_TERMINAL_ENABLED === "true",
-    previewConverterUrl: parseConverterUrl(parsed.data.SPARK_PREVIEW_CONVERTER_URL),
+    previewConverterUrl: parseConverterUrl(
+      parsed.data.SPARK_PREVIEW_CONVERTER_URL
+    ),
   });
 }

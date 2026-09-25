@@ -6,8 +6,15 @@ export const runtime = "nodejs";
 const noStore = { "Cache-Control": "private, no-store" };
 
 export async function GET(): Promise<Response> {
-  if (!(await getCurrentUser())) return NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401, headers: noStore });
+  if (!(await getCurrentUser()))
+    return NextResponse.json(
+      { error: "UNAUTHENTICATED" },
+      { status: 401, headers: noStore }
+    );
   const service = getFileService();
   await service.runMaintenance();
-  return NextResponse.json({ entries: service.listRecycleEntries() }, { headers: noStore });
+  return NextResponse.json(
+    { entries: service.listRecycleEntries() },
+    { headers: noStore }
+  );
 }

@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { beginFolderRead, hasActiveFolderReads, waitForFolderReadQuietPeriod } from "./folder-read-priority";
+import {
+  beginFolderRead,
+  hasActiveFolderReads,
+  waitForFolderReadQuietPeriod,
+} from "./folder-read-priority";
 
 describe("folder read priority", () => {
   it("tracks active interactive folder reads", () => {
@@ -14,7 +18,9 @@ describe("folder read priority", () => {
     vi.useFakeTimers();
     const release = beginFolderRead();
     let settled = false;
-    const waiting = waitForFolderReadQuietPeriod(50).then(() => { settled = true; });
+    const waiting = waitForFolderReadQuietPeriod(50).then(() => {
+      settled = true;
+    });
     try {
       await vi.advanceTimersByTimeAsync(100);
       expect(settled).toBe(false);

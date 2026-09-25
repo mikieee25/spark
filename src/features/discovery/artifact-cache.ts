@@ -14,7 +14,12 @@ export function createArtifactCache(dataDirectory: string, namespace: string) {
       try {
         return await readFile(target);
       } catch (error) {
-        if (!(error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT")) throw error;
+        if (!(
+          error instanceof Error &&
+          "code" in error &&
+          (error as NodeJS.ErrnoException).code === "ENOENT"
+        ))
+          throw error;
       }
       const buffer = await generate();
       await mkdir(directory, { recursive: true });
@@ -22,7 +27,12 @@ export function createArtifactCache(dataDirectory: string, namespace: string) {
       try {
         await writeFile(temporary, buffer, { flag: "wx" });
         await rename(temporary, target).catch((error: unknown) => {
-          if (!(error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "EEXIST")) throw error;
+          if (!(
+            error instanceof Error &&
+            "code" in error &&
+            (error as NodeJS.ErrnoException).code === "EEXIST"
+          ))
+            throw error;
         });
       } finally {
         await rm(temporary, { force: true });

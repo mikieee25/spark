@@ -71,22 +71,30 @@ function toEntry(row: RecycleRow): RecycleEntry {
   };
 }
 
-export function getRecycleEntry(database: Database.Database, id: string): RecycleEntry | null {
-  const row = database.prepare("SELECT * FROM recycle_entries WHERE id = ?").get(id) as RecycleRow | undefined;
+export function getRecycleEntry(
+  database: Database.Database,
+  id: string
+): RecycleEntry | null {
+  const row = database
+    .prepare("SELECT * FROM recycle_entries WHERE id = ?")
+    .get(id) as RecycleRow | undefined;
   return row ? toEntry(row) : null;
 }
 
 export function createRecycleEntry(
   database: Database.Database,
-  input: RecycleEntryInput,
+  input: RecycleEntryInput
 ): RecycleEntry {
   const id = randomUUID();
   const deletedAt = (input.occurredAt ?? new Date()).toISOString();
   database.transaction(() => {
-    database.prepare(`INSERT INTO recycle_entries
+    database
+      .prepare(
+        `INSERT INTO recycle_entries
       (id, original_path, storage_key, item_type, size_bytes, deleted_at, expires_at,
         deleted_by, operation_id, metadata_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
       .run(
         id,
         input.originalPath,
@@ -97,7 +105,7 @@ export function createRecycleEntry(
         input.expiresAt.toISOString(),
         input.deletedBy,
         input.operationId ?? null,
-        JSON.stringify(input.metadata ?? {}),
+        JSON.stringify(input.metadata ?? {})
       );
     recordActivity(database, {
       actorUserId: input.deletedBy,
@@ -114,12 +122,15 @@ export function createRecycleEntry(
 
 export function listRecycleEntries(
   database: Database.Database,
-  options: { includeFinalized?: boolean } = {},
+  options: { includeFinalized?: boolean } = {}
 ): RecycleEntry[] {
   const where = options.includeFinalized
     ? ""
     : "WHERE restored_at IS NULL AND expired_at IS NULL AND purged_at IS NULL";
-  const rows = database.prepare(`SELECT * FROM recycle_entries ${where} ORDER BY deleted_at DESC, id DESC`)
+  const rows = database
+    .prepare(
+      `SELECT * FROM recycle_entries ${where} ORDER BY deleted_at DESC, id DESC`
+    )
     .all() as RecycleRow[];
   return rows.map(toEntry);
 }
@@ -128,12 +139,16 @@ export function restoreRecycleEntry(
   database: Database.Database,
   id: string,
   actorUserId: string,
-  now = new Date(),
+  now = new Date()
 ): RecycleEntry {
   const entry = getRecycleEntry(database, id);
-  if (!entry || entry.state !== "active") throw new Error("RECYCLE_ENTRY_NOT_ACTIVE");
+  if (!entry || entry.state !== "active")
+    throw new Error("RECYCLE_ENTRY_NOT_ACTIVE");
   database.transaction(() => {
-    database.prepare("UPDATE recycle_entries SET restored_at = ?, restored_by = ? WHERE id = ?")
+    database
+      .prepare(
+        "UPDATE recycle_entries SET restored_at = ?, restored_by = ? WHERE id = ?"
+      )
       .run(now.toISOString(), actorUserId, id);
     recordActivity(database, {
       actorUserId,
@@ -152,7 +167,7 @@ export function purgeRecycleEntry(
   database: Database.Database,
   id: string,
   actor: RecycleActor,
-  now = new Date(),
+  now = new Date()
 ): RecycleEntry {
   if (actor.role !== "admin") throw new Error("ADMIN_REQUIRED");
   const entry = getRecycleEntry(database, id);
@@ -160,7 +175,10 @@ export function purgeRecycleEntry(
     throw new Error("RECYCLE_ENTRY_NOT_PURGEABLE");
   }
   database.transaction(() => {
-    database.prepare("UPDATE recycle_entries SET purged_at = ?, purged_by = ? WHERE id = ?")
+    database
+      .prepare(
+        "UPDATE recycle_entries SET purged_at = ?, purged_by = ? WHERE id = ?"
+      )
       .run(now.toISOString(), actor.id, id);
     recordActivity(database, {
       actorUserId: actor.id,
@@ -175,15 +193,22 @@ export function purgeRecycleEntry(
   return getRecycleEntry(database, id) as RecycleEntry;
 }
 
-export function expireRecycleEntries(database: Database.Database, now = new Date()): RecycleEntry[] {
-  const rows = database.prepare(`SELECT * FROM recycle_entries
-    WHERE restored_at IS NULL AND expired_at IS NULL AND purged_at IS NULL AND expires_at <= ?`)
+export function expireRecycleEntries(
+  database: Database.Database,
+  now = new Date()
+): RecycleEntry[] {
+  const rows = database
+    .prepare(
+      `SELECT * FROM recycle_entries
+    WHERE restored_at IS NULL AND expired_at IS NULL AND purged_at IS NULL AND expires_at <= ?`
+    )
     .all(now.toISOString()) as RecycleRow[];
   const expired: RecycleEntry[] = [];
   database.transaction(() => {
     for (const row of rows) {
       const entry = toEntry(row);
-      database.prepare("UPDATE recycle_entries SET expired_at = ? WHERE id = ?")
+      database
+        .prepare("UPDATE recycle_entries SET expired_at = ? WHERE id = ?")
         .run(now.toISOString(), entry.id);
       recordActivity(database, {
         actorType: "system",

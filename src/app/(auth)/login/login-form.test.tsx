@@ -18,8 +18,12 @@ describe("LoginForm", () => {
   it("announces and focuses authentication errors", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
     render(<LoginForm />);
-    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "alex" } });
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong-password" } });
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "alex" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "wrong-password" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("incorrect");
@@ -27,20 +31,46 @@ describe("LoginForm", () => {
   });
 
   it("continues to the protected workspace on success", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ user: { mustChangePassword: false } }) }));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue({
+          ok: true,
+          json: async () => ({ user: { mustChangePassword: false } }),
+        })
+    );
     render(<LoginForm />);
-    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "alex" } });
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "correct-password" } });
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "alex" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-password" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/files"));
   });
 
   it("takes reset accounts to the required password change", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ user: { mustChangePassword: true } }) }));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue({
+          ok: true,
+          json: async () => ({ user: { mustChangePassword: true } }),
+        })
+    );
     render(<LoginForm />);
-    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "alex" } });
-    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "temporary-password" } });
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "alex" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "temporary-password" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/account/password"));
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith("/account/password")
+    );
   });
 });

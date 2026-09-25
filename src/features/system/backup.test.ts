@@ -30,16 +30,30 @@ afterEach(async () => {
 describe("SPARK backups", () => {
   it("creates and verifies a manifest-backed private-data snapshot", async () => {
     const destination = path.join(directory, "backups");
-    const backupPath = await createBackup({ dataDirectory, databasePath }, destination, new Date("2026-09-22T01:00:00.000Z"));
-    expect(await verifyBackup(backupPath)).toEqual(expect.objectContaining({ valid: true, files: expect.any(Number) }));
+    const backupPath = await createBackup(
+      { dataDirectory, databasePath },
+      destination,
+      new Date("2026-09-22T01:00:00.000Z")
+    );
+    expect(await verifyBackup(backupPath)).toEqual(
+      expect.objectContaining({ valid: true, files: expect.any(Number) })
+    );
   });
 
   it("requires confirmation before restoring a snapshot", async () => {
     const destination = path.join(directory, "backups");
-    const backupPath = await createBackup({ dataDirectory, databasePath }, destination, new Date("2026-09-22T01:00:00.000Z"));
+    const backupPath = await createBackup(
+      { dataDirectory, databasePath },
+      destination,
+      new Date("2026-09-22T01:00:00.000Z")
+    );
     const restoreTarget = path.join(directory, "restored-data");
-    await expect(restoreBackup(backupPath, restoreTarget)).rejects.toThrow("RESTORE_CONFIRMATION_REQUIRED");
+    await expect(restoreBackup(backupPath, restoreTarget)).rejects.toThrow(
+      "RESTORE_CONFIRMATION_REQUIRED"
+    );
     await restoreBackup(backupPath, restoreTarget, true);
-    expect(await fs.readFile(path.join(restoreTarget, "recycle", "one"), "utf8")).toBe("recycled");
+    expect(
+      await fs.readFile(path.join(restoreTarget, "recycle", "one"), "utf8")
+    ).toBe("recycled");
   });
 });

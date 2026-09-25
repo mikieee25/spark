@@ -16,7 +16,10 @@ describe("loadLocalEnvironment", () => {
   it("loads .env.local when present without overwriting shell variables", () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "spark-env-"));
     try {
-      fs.writeFileSync(path.join(directory, ".env.local"), `${key}=from-file\n`);
+      fs.writeFileSync(
+        path.join(directory, ".env.local"),
+        `${key}=from-file\n`
+      );
       process.env[key] = "from-shell";
 
       loadLocalEnvironment(directory);

@@ -35,29 +35,59 @@ try {
   migrate(database);
   gate(
     "empty-database migration",
-    (database.prepare("SELECT count(*) count FROM sqlite_master WHERE type = 'table' AND name = 'users'").get() as { count: number }).count === 1,
+    (
+      database
+        .prepare(
+          "SELECT count(*) count FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+        )
+        .get() as { count: number }
+    ).count === 1
   );
   migrate(database);
-  gate("idempotent migration", (database.prepare("SELECT count(*) count FROM schema_migrations").get() as { count: number }).count === 7);
+  gate(
+    "idempotent migration",
+    (
+      database
+        .prepare("SELECT count(*) count FROM schema_migrations")
+        .get() as { count: number }
+    ).count === 7
+  );
 
   const administrator = await createAdministrator(database, {
-    username: "verifier", displayName: "Foundation Verifier", password: "verification-password",
+    username: "verifier",
+    displayName: "Foundation Verifier",
+    password: "verification-password",
   });
   gate("administrator creation", administrator.role === "admin");
-  const auth = await authenticate(database, "VERIFIER", "verification-password", new Date());
+  const auth = await authenticate(
+    database,
+    "VERIFIER",
+    "verification-password",
+    new Date()
+  );
   gate("authentication", auth.ok);
   if (!auth.ok) throw new Error("Foundation gate failed: authentication");
-  gate("session persistence", resolveSession(database, auth.token, new Date())?.id === administrator.id);
+  gate(
+    "session persistence",
+    resolveSession(database, auth.token, new Date())?.id === administrator.id
+  );
   const readiness = checkReadiness({
     database: () => Boolean(database.prepare("SELECT 1 value").get()),
     dataDirectory: () => fs.statSync(dataDirectory).isDirectory(),
     filesRoot: () => fs.statSync(filesRoot).isDirectory(),
   });
   gate("readiness", readiness.ok);
-  gate("protected shell", fs.readFileSync(path.resolve("src/app/(app)/layout.tsx"), "utf8").includes("redirect(\"/login\")"));
+  gate(
+    "protected shell",
+    fs
+      .readFileSync(path.resolve("src/app/(app)/layout.tsx"), "utf8")
+      .includes('redirect("/login")')
+  );
   database.close();
 } catch (error) {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(
+    `${error instanceof Error ? error.message : String(error)}\n`
+  );
   process.exitCode = 1;
 } finally {
   fs.rmSync(root, { recursive: true, force: true });

@@ -3,7 +3,15 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type Database from "better-sqlite3";
 import { openDatabase } from "@/lib/db/database";
 import { migrate } from "@/lib/db/migrations";
@@ -42,10 +50,20 @@ beforeAll(async () => {
   database = openDatabase(path.join(directory, "spark.db"));
   migrate(database);
   const now = new Date().toISOString();
-  database.prepare(`INSERT INTO users
+  database
+    .prepare(
+      `INSERT INTO users
     (id, username, display_name, password_hash, role, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'admin', ?, ?)`)
-    .run(randomUUID(), "admin", "Administrator", await hashPassword("correct-password"), now, now);
+    VALUES (?, ?, ?, ?, 'admin', ?, ?)`
+    )
+    .run(
+      randomUUID(),
+      "admin",
+      "Administrator",
+      await hashPassword("correct-password"),
+      now,
+      now
+    );
   mocks.getDatabase.mockReturnValue(database);
 });
 
@@ -71,31 +89,54 @@ describe("authentication routes", () => {
   });
 
   it("returns a generic error for invalid credentials", async () => {
-    const response = await login(request(JSON.stringify({
-      username: "admin", password: "wrong-password",
-    })));
+    const response = await login(
+      request(
+        JSON.stringify({
+          username: "admin",
+          password: "wrong-password",
+        })
+      )
+    );
     expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toEqual({ error: "INVALID_CREDENTIALS" });
+    await expect(response.json()).resolves.toEqual({
+      error: "INVALID_CREDENTIALS",
+    });
   });
 
   it("sets a hardened cookie and exposes only safe session data", async () => {
-    const response = await login(request(JSON.stringify({
-      username: "admin", password: "correct-password",
-    })));
+    const response = await login(
+      request(
+        JSON.stringify({
+          username: "admin",
+          password: "correct-password",
+        })
+      )
+    );
     expect(response.status).toBe(200);
     const cookie = mocks.cookies.get("spark_session");
-    expect(cookie?.options).toEqual(expect.objectContaining({
-      httpOnly: true, sameSite: "lax", path: "/",
-    }));
+    expect(cookie?.options).toEqual(
+      expect.objectContaining({
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+      })
+    );
     const current = await session();
     const body = await current.json();
-    expect(body.user).toEqual(expect.objectContaining({ username: "admin", role: "admin" }));
+    expect(body.user).toEqual(
+      expect.objectContaining({ username: "admin", role: "admin" })
+    );
     expect(body.user).not.toHaveProperty("password_hash");
     expect(current.headers.get("cache-control")).toBe("private, no-store");
 
     expect((await logout(request("{}"))).status).toBe(200);
     expect((await session()).status).toBe(401);
-    expect(database.prepare("SELECT action, outcome FROM activity_events ORDER BY occurred_at DESC, id DESC LIMIT 1").get())
-      .toEqual({ action: "sign_out", outcome: "success" });
+    expect(
+      database
+        .prepare(
+          "SELECT action, outcome FROM activity_events ORDER BY occurred_at DESC, id DESC LIMIT 1"
+        )
+        .get()
+    ).toEqual({ action: "sign_out", outcome: "success" });
   });
 });

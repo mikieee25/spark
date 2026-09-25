@@ -13,7 +13,19 @@ export default async function ActivityPage() {
 
   return (
     <section className="mx-auto max-w-[1200px] space-y-6">
-      <PageHeader eyebrow="Activity" title="Activity history" description="Append-only records of authentication, system, and file operations." actions={<a className={buttonVariants({ variant: "outline" })} href="/api/admin/activity/export">Export CSV</a>} />
+      <PageHeader
+        eyebrow="Activity"
+        title="Activity history"
+        description="Append-only records of authentication, system, and file operations."
+        actions={
+          <a
+            className={buttonVariants({ variant: "outline" })}
+            href="/api/admin/activity/export"
+          >
+            Export CSV
+          </a>
+        }
+      />
       {events.length === 0 ? (
         <p className="rounded-xl border border-dashed border-border p-6 text-muted-foreground">
           No activity recorded yet.

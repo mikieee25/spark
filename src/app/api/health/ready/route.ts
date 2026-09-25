@@ -13,8 +13,14 @@ export function GET(): Response {
     const mode = fs.constants.R_OK | fs.constants.W_OK;
     const result = checkReadiness({
       database: () => Boolean(getDatabase().prepare("SELECT 1 value").get()),
-      dataDirectory: () => { fs.accessSync(config.dataDirectory, mode); return true; },
-      filesRoot: () => { fs.accessSync(config.filesRoot, mode); return true; },
+      dataDirectory: () => {
+        fs.accessSync(config.dataDirectory, mode);
+        return true;
+      },
+      filesRoot: () => {
+        fs.accessSync(config.filesRoot, mode);
+        return true;
+      },
     });
     if (!result.ok) {
       console.error("SPARK readiness failed", {
@@ -31,8 +37,11 @@ export function GET(): Response {
   } catch (error) {
     console.error("SPARK readiness configuration failed", error);
     return NextResponse.json(
-      { ok: false, checks: { database: false, dataDirectory: false, filesRoot: false } },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
+      {
+        ok: false,
+        checks: { database: false, dataDirectory: false, filesRoot: false },
+      },
+      { status: 503, headers: { "Cache-Control": "no-store" } }
     );
   }
 }

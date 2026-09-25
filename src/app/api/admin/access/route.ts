@@ -2,10 +2,85 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/features/auth/request-auth";
 import { hasValidMutationOrigin } from "@/features/auth/origin";
-import { getAccessSettings, setSetting } from "@/features/admin/settings-repository";
+import {
+  getAccessSettings,
+  setSetting,
+} from "@/features/admin/settings-repository";
 import { recordActivity } from "@/features/activity/activity-repository";
 import { getDatabase } from "@/lib/db/runtime";
 export const runtime = "nodejs";
 const headers = { "Cache-Control": "private, no-store" };
-export async function GET(): Promise<Response> { const user = await getCurrentUser(); if (!user || user.role !== "admin") return NextResponse.json({ error: "ADMIN_REQUIRED" }, { status: 403, headers }); return NextResponse.json(getAccessSettings(getDatabase()), { headers }); }
-export async function PATCH(request: Request): Promise<Response> { if (!hasValidMutationOrigin(request)) return NextResponse.json({ error: "INVALID_ORIGIN" }, { status: 403, headers }); const user = await getCurrentUser(); if (!user || user.role !== "admin") return NextResponse.json({ error: "ADMIN_REQUIRED" }, { status: 403, headers }); let body: unknown; try { body = await request.json(); } catch { return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400, headers }); } const parsed = z.object({ requireSignIn: z.boolean(), durationHours: z.number().int().min(1).max(168).optional(), reason: z.string().max(500).nullable().optional() }).safeParse(body); if (!parsed.success || (!parsed.data.requireSignIn && !parsed.data.durationHours)) return NextResponse.json({ error: "INVALID_SETTING" }, { status: 400, headers }); const db = getDatabase(); const now = new Date(); setSetting(db, "require_sign_in", parsed.data.requireSignIn, user.id, now); setSetting(db, "anonymous_access_reason", parsed.data.requireSignIn ? null : (parsed.data.reason ?? null), user.id, now); const expiresAt = parsed.data.requireSignIn ? null : new Date(now.getTime() + (parsed.data.durationHours ?? 1) * 3_600_000).toISOString(); setSetting(db, "anonymous_access_expires_at", expiresAt, user.id, now); recordActivity(db, { actorUserId: user.id, actorType: "user", action: parsed.data.requireSignIn ? "anonymous_access_closed" : "anonymous_access_opened", paths: [], outcome: "success", occurredAt: now, metadata: { expiresAt } }); return NextResponse.json(getAccessSettings(db, now), { headers }); }
+export async function GET(): Promise<Response> {
+  const user = await getCurrentUser();
+  if (!user || user.role !== "admin")
+    return NextResponse.json(
+      { error: "ADMIN_REQUIRED" },
+      { status: 403, headers }
+    );
+  return NextResponse.json(getAccessSettings(getDatabase()), { headers });
+}
+export async function PATCH(request: Request): Promise<Response> {
+  if (!hasValidMutationOrigin(request))
+    return NextResponse.json(
+      { error: "INVALID_ORIGIN" },
+      { status: 403, headers }
+    );
+  const user = await getCurrentUser();
+  if (!user || user.role !== "admin")
+    return NextResponse.json(
+      { error: "ADMIN_REQUIRED" },
+      { status: 403, headers }
+    );
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "INVALID_REQUEST" },
+      { status: 400, headers }
+    );
+  }
+  const parsed = z
+    .object({
+      requireSignIn: z.boolean(),
+      durationHours: z.number().int().min(1).max(168).optional(),
+      reason: z.string().max(500).nullable().optional(),
+    })
+    .safeParse(body);
+  if (
+    !parsed.success ||
+    (!parsed.data.requireSignIn && !parsed.data.durationHours)
+  )
+    return NextResponse.json(
+      { error: "INVALID_SETTING" },
+      { status: 400, headers }
+    );
+  const db = getDatabase();
+  const now = new Date();
+  setSetting(db, "require_sign_in", parsed.data.requireSignIn, user.id, now);
+  setSetting(
+    db,
+    "anonymous_access_reason",
+    parsed.data.requireSignIn ? null : (parsed.data.reason ?? null),
+    user.id,
+    now
+  );
+  const expiresAt = parsed.data.requireSignIn
+    ? null
+    : new Date(
+        now.getTime() + (parsed.data.durationHours ?? 1) * 3_600_000
+      ).toISOString();
+  setSetting(db, "anonymous_access_expires_at", expiresAt, user.id, now);
+  recordActivity(db, {
+    actorUserId: user.id,
+    actorType: "user",
+    action: parsed.data.requireSignIn
+      ? "anonymous_access_closed"
+      : "anonymous_access_opened",
+    paths: [],
+    outcome: "success",
+    occurredAt: now,
+    metadata: { expiresAt },
+  });
+  return NextResponse.json(getAccessSettings(db, now), { headers });
+}

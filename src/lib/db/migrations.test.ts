@@ -26,7 +26,9 @@ describe("database migrations", () => {
     expect(database.pragma("foreign_keys", { simple: true })).toBe(1);
     expect(database.pragma("journal_mode", { simple: true })).toBe("wal");
     expect(
-      database.prepare("select max(version) version from schema_migrations").get(),
+      database
+        .prepare("select max(version) version from schema_migrations")
+        .get()
     ).toEqual({ version: 7 });
 
     const tables = database
@@ -49,28 +51,45 @@ describe("database migrations", () => {
         "user_favorites",
         "user_recent_items",
         "terminal_tokens",
-      ]),
+      ])
     );
     expect(database.prepare("PRAGMA table_info(users)").all()).toEqual(
-      expect.arrayContaining([expect.objectContaining({ name: "must_change_password" })]),
+      expect.arrayContaining([
+        expect.objectContaining({ name: "must_change_password" }),
+      ])
     );
-    expect(database.prepare("SELECT key, value_json FROM settings WHERE key IN ('require_sign_in', 'recycle_retention_days') ORDER BY key").all())
-      .toEqual([
-        { key: "recycle_retention_days", value_json: "30" },
-        { key: "require_sign_in", value_json: "true" },
-      ]);
+    expect(
+      database
+        .prepare(
+          "SELECT key, value_json FROM settings WHERE key IN ('require_sign_in', 'recycle_retention_days') ORDER BY key"
+        )
+        .all()
+    ).toEqual([
+      { key: "recycle_retention_days", value_json: "30" },
+      { key: "require_sign_in", value_json: "true" },
+    ]);
 
-    expect(database.prepare("PRAGMA table_info(file_index_entries)").all()).toEqual(
+    expect(
+      database.prepare("PRAGMA table_info(file_index_entries)").all()
+    ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "logical_path" }),
         expect.objectContaining({ name: "text_indexed" }),
         expect.objectContaining({ name: "generation" }),
-      ]),
+      ])
     );
-    expect(database.prepare("SELECT name FROM sqlite_master WHERE name = 'file_index_fts'").get()).toEqual({
+    expect(
+      database
+        .prepare("SELECT name FROM sqlite_master WHERE name = 'file_index_fts'")
+        .get()
+    ).toEqual({
       name: "file_index_fts",
     });
-    expect(() => database.exec("CREATE VIRTUAL TABLE temp.fts5_runtime_test USING fts5(value)")).not.toThrow();
+    expect(() =>
+      database.exec(
+        "CREATE VIRTUAL TABLE temp.fts5_runtime_test USING fts5(value)"
+      )
+    ).not.toThrow();
     database.exec("DROP TABLE temp.fts5_runtime_test");
 
     database.close();
