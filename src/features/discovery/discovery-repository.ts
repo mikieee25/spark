@@ -94,7 +94,8 @@ export function listFavorites(database: Database.Database, userId: string): Favo
     .all(userId) as Row[]).map(toFavorite);
 }
 
-export function addRecentItem(database: Database.Database, userId: string, logicalPath: string, accessedAt = new Date().toISOString()): RecentItem {
+export function addRecentItem(database: Database.Database, userId: string, logicalPath: string, accessedAt = new Date().toISOString()): RecentItem | null {
+  if (!logicalPath) return null;
   database.prepare("INSERT INTO user_recent_items(user_id, logical_path, accessed_at) VALUES (?, ?, ?) ON CONFLICT(user_id, logical_path) DO UPDATE SET accessed_at = excluded.accessed_at")
     .run(userId, logicalPath, accessedAt);
   database.prepare(`DELETE FROM user_recent_items
@@ -108,6 +109,6 @@ export function addRecentItem(database: Database.Database, userId: string, logic
 
 export function listRecentItems(database: Database.Database, userId: string, limit = 50): RecentItem[] {
   const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
-  return (database.prepare("SELECT user_id, logical_path, accessed_at FROM user_recent_items WHERE user_id = ? ORDER BY accessed_at DESC, logical_path ASC LIMIT ?")
+  return (database.prepare("SELECT user_id, logical_path, accessed_at FROM user_recent_items WHERE user_id = ? AND logical_path <> '' ORDER BY accessed_at DESC, logical_path ASC LIMIT ?")
     .all(userId, boundedLimit) as Row[]).map(toRecent);
 }
