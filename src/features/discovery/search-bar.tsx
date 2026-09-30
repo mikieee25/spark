@@ -63,7 +63,7 @@ export function SearchBar({ loading = false, onSearch, onClear }: Props) {
               submit();
             }
           }}
-          placeholder="Search files, folders, and supported content"
+          placeholder="Search names and file contents"
           aria-label="Search workspace"
           className="h-9 pr-10 pl-10"
         />

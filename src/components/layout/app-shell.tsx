@@ -45,6 +45,12 @@ export function AppShell({
             aria-label="Header actions"
             className="flex shrink-0 items-center gap-2"
           >
+            <div className="hidden min-w-0 text-right sm:block">
+              <p className="max-w-48 truncate text-sm font-medium">
+                {user.displayName}
+              </p>
+              <p className="text-xs text-muted-foreground">{user.role}</p>
+            </div>
             <ThemeToggle />
             <SignOutButton />
           </div>

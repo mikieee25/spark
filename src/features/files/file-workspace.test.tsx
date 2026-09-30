@@ -81,9 +81,7 @@ describe("FileWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Energy" }));
 
     await waitFor(() =>
-      expect(
-        screen.getByText("Energy", { selector: "p.mt-1" })
-      ).toBeInTheDocument()
+      expect(screen.getByRole("heading", { name: "Energy" })).toBeInTheDocument()
     );
     expect(fetch).toHaveBeenCalledWith(
       "/api/files?path=Energy",
@@ -912,6 +910,7 @@ describe("FileWorkspace", () => {
         ]}
       />
     );
+    fireEvent.click(screen.getByRole("tab", { name: "Recent" }));
     expect(
       screen.getByRole("button", { name: /Open recent item brief\.txt/i })
     ).toBeInTheDocument();

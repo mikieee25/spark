@@ -17,6 +17,8 @@ import {
   Folder,
   FolderUp,
   LoaderCircle,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   Star,
   Trash2,
@@ -258,6 +260,10 @@ export function FileWorkspace({
   const [dropActive, setDropActive] = useState(false);
   const [favorites, setFavorites] = useState(initialFavorites);
   const [recent, setRecent] = useState(initialRecent);
+  const [discoveryTab, setDiscoveryTab] = useState<"favorites" | "recent">(
+    "favorites"
+  );
+  const [discoveryOpen, setDiscoveryOpen] = useState(true);
   const [searchState, setSearchState] = useState<SearchState>("idle");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchKind, setSearchKind] = useState<SearchKind>("all");
@@ -1114,18 +1120,16 @@ export function FileWorkspace({
           </BreadcrumbList>
         </Breadcrumb>
       </div>
-      <div className="flex shrink-0 flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">
-            My workspace
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Shared files
+      <div className="flex shrink-0 flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-primary">
+              My workspace
+            </p>
+          </div>
+          <h1 className="mt-1 truncate text-2xl font-semibold tracking-tight sm:text-3xl">
+            {currentPath ? baseName(currentPath) : "Shared files"}
           </h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            A calm, searchable home for DOE records, working files, and shared
-            knowledge.
-          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
@@ -1338,37 +1342,9 @@ export function FileWorkspace({
           </Button>
         </div>
       )}
-      <div data-file-stats className="grid shrink-0 gap-3 md:grid-cols-3">
-        <Card className="shadow-none">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground">
-              Current folder
-            </p>
-            <p className="mt-1 truncate text-lg font-semibold">
-              {currentPath || "Shared files"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-none">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground">
-              Indexed results
-            </p>
-            <p className="mt-1 text-lg font-semibold">
-              {searchState === "success" ? searchResult.items.length : "—"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-none">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground">
-              Files and folders
-            </p>
-            <p className="mt-1 text-lg font-semibold">{entries.length}</p>
-          </CardContent>
-        </Card>
-      </div>
-      <div className="grid min-h-0 min-w-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-1">
+      <div
+        className={`grid min-h-0 min-w-0 flex-1 gap-4 lg:grid-rows-1 ${discoveryOpen ? "lg:grid-cols-[minmax(0,1fr)_20rem]" : "lg:grid-cols-[minmax(0,1fr)_3.5rem]"}`}
+      >
         <Card className="flex min-h-0 min-w-0 flex-col overflow-hidden shadow-none">
           <CardHeader className="shrink-0 gap-4 border-b bg-muted/20 px-4 py-4 sm:px-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -1460,22 +1436,73 @@ export function FileWorkspace({
         </Card>
         <aside
           aria-label="Discovery shortcuts"
-          className="grid min-h-0 content-start gap-4 overflow-y-auto sm:grid-cols-2 lg:grid-cols-1"
+          className={`min-h-0 overflow-y-auto ${discoveryOpen ? "content-start" : "flex justify-center"}`}
         >
-          <DiscoveryList
-            title="Favorites"
-            icon={Star}
-            items={favorites}
-            empty="Favorite important files and folders for quick access."
-            onSelect={selectPath}
-          />
-          <DiscoveryList
-            title="Recent items"
-            icon={Clock3}
-            items={recent}
-            empty="Files and folders you open will appear here."
-            onSelect={selectPath}
-          />
+          <div className="flex items-center justify-between gap-2 border-b pb-2">
+            {discoveryOpen && (
+              <div
+                role="tablist"
+                aria-label="Discovery shortcuts"
+                className="flex min-w-0 items-center gap-1"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={discoveryTab === "favorites"}
+                  className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${discoveryTab === "favorites" ? "bg-accent text-primary" : "text-muted-foreground hover:bg-muted"}`}
+                  onClick={() => setDiscoveryTab("favorites")}
+                >
+                  <Star className="mr-1 inline size-3.5" aria-hidden="true" />
+                  Favorites
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={discoveryTab === "recent"}
+                  className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${discoveryTab === "recent" ? "bg-accent text-primary" : "text-muted-foreground hover:bg-muted"}`}
+                  onClick={() => setDiscoveryTab("recent")}
+                >
+                  <Clock3 className="mr-1 inline size-3.5" aria-hidden="true" />
+                  Recent
+                </button>
+              </div>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0"
+              aria-label={
+                discoveryOpen
+                  ? "Collapse discovery shortcuts"
+                  : "Expand discovery shortcuts"
+              }
+              onClick={() => setDiscoveryOpen((open) => !open)}
+            >
+              {discoveryOpen ? <PanelRightClose /> : <PanelRightOpen />}
+            </Button>
+          </div>
+          {discoveryOpen && (
+            <div className="mt-3">
+              {discoveryTab === "favorites" ? (
+                <DiscoveryList
+                  title="Favorites"
+                  icon={Star}
+                  items={favorites}
+                  empty="Favorite important files and folders for quick access."
+                  onSelect={selectPath}
+                />
+              ) : (
+                <DiscoveryList
+                  title="Recent items"
+                  icon={Clock3}
+                  items={recent}
+                  empty="Files and folders you open will appear here."
+                  onSelect={selectPath}
+                />
+              )}
+            </div>
+          )}
         </aside>
       </div>
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed bg-muted/20 px-4 py-3 text-xs text-muted-foreground">

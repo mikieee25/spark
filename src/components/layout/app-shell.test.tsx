@@ -32,6 +32,7 @@ describe("AppShell", () => {
     expect(
       screen.getByRole("button", { name: "Sign out" })
     ).toBeInTheDocument();
+    expect(screen.getByText("Alex DOE")).toBeInTheDocument();
     expect(
       within(screen.getByLabelText("Sidebar")).queryByRole("button", {
         name: "Sign out",

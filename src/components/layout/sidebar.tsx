@@ -10,12 +10,6 @@ export function Sidebar({ user }: { user: SessionUser }) {
     >
       <BrandLockup />
       <SidebarNav user={user} />
-      <div className="mt-auto pt-8 max-md:hidden">
-        <p className="px-1 text-sm">
-          <strong className="block">{user.displayName}</strong>
-          <span className="text-muted-foreground">{user.role}</span>
-        </p>
-      </div>
     </aside>
   );
 }
