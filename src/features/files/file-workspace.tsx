@@ -75,6 +75,7 @@ import {
   downloadSelection,
   downloadUrl,
   FileApiError,
+  describeFileError,
   listFiles,
   moveFile,
   recycleSelection,
@@ -172,7 +173,7 @@ function DiscoveryList({
         {items.length ? (
           <ul className="flex flex-col gap-1">
             {items.slice(0, 6).map((item) => {
-              const name = baseName(item.logicalPath);
+              const name = baseName(item.logicalPath) || "Shared files";
               return (
                 <li key={item.logicalPath}>
                   <Button
@@ -326,7 +327,7 @@ export function FileWorkspace({
           sequence === navigationSequence.current
         )
           setError(
-            cause instanceof Error ? cause.message : "Unable to open folder"
+            describeFileError(cause, "Unable to open folder")
           );
       })
       .finally(() => {
@@ -494,7 +495,7 @@ export function FileWorkspace({
         sequence === navigationSequence.current
       ) {
         setError(
-          cause instanceof Error ? cause.message : "Unable to open folder"
+          describeFileError(cause, "Unable to open folder")
         );
       }
     } finally {
@@ -602,7 +603,7 @@ export function FileWorkspace({
       setNotice(`${name} created.`);
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Unable to create folder"
+        describeFileError(cause, "Unable to create folder")
       );
     }
   }
@@ -627,9 +628,7 @@ export function FileWorkspace({
         controller.signal.aborted ||
           (cause instanceof DOMException && cause.name === "AbortError")
           ? "Upload cancelled."
-          : cause instanceof Error
-            ? cause.message
-            : "Unable to upload file"
+            : describeFileError(cause, "Unable to upload file")
       );
     } finally {
       setUploadingFile(null);
@@ -687,9 +686,7 @@ export function FileWorkspace({
           (cause instanceof Error && cause.message === "UPLOAD_CANCELLED") ||
           (cause instanceof DOMException && cause.name === "AbortError")
           ? "Folder upload cancelled."
-          : cause instanceof Error
-            ? cause.message
-            : "Unable to upload folder"
+            : describeFileError(cause, "Unable to upload folder")
       );
     } finally {
       setFolderProgress(null);
@@ -832,9 +829,7 @@ export function FileWorkspace({
       setBatchMessageIsError(false);
     } catch (cause) {
       setBatchMessage(
-        cause instanceof Error
-          ? cause.message
-          : "Unable to download selected items."
+        describeFileError(cause, "Unable to download selected items.")
       );
       setBatchMessageIsError(true);
     } finally {
@@ -879,9 +874,7 @@ export function FileWorkspace({
       }
     } catch (cause) {
       setBatchMessage(
-        cause instanceof Error
-          ? cause.message
-          : "Unable to recycle selected items."
+        describeFileError(cause, "Unable to recycle selected items.")
       );
       setBatchMessageIsError(true);
     } finally {
@@ -914,7 +907,7 @@ export function FileWorkspace({
       );
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Unable to delete item"
+        describeFileError(cause, "Unable to delete item")
       );
     }
   }
@@ -938,7 +931,7 @@ export function FileWorkspace({
         setConflictOpen(true);
       else
         setError(
-          cause instanceof Error ? cause.message : "Unable to rename item"
+          describeFileError(cause, "Unable to rename item")
         );
     }
   }
@@ -952,6 +945,14 @@ export function FileWorkspace({
         )
       ),
     [favorites, selected]
+  );
+  const favoritePaths = useMemo(
+    () => new Set(favorites.map((favorite) => favorite.logicalPath)),
+    [favorites]
+  );
+  const isFavorite = useCallback(
+    (logicalPath: string) => favoritePaths.has(logicalPath),
+    [favoritePaths]
   );
 
   const isOpeningFolder = openingPath !== null;
@@ -1387,11 +1388,7 @@ export function FileWorkspace({
                 onToggleAllSelection={toggleAllBatchItems}
                 onDownloadSelected={() => void submitBatchDownload()}
                 onRecycleSelected={() => setBatchRecycleOpen(true)}
-                isFavorite={(logicalPath) =>
-                  favorites.some(
-                    (favorite) => favorite.logicalPath === logicalPath
-                  )
-                }
+                isFavorite={isFavorite}
               />
             )}
           </CardContent>

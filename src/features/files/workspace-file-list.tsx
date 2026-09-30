@@ -26,6 +26,13 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { downloadUrl, type FileEntry } from "./file-api";
 
 export type WorkspaceViewMode =
@@ -52,6 +59,10 @@ const DEFAULT_PREFERENCES: WorkspacePreferences = {
   sortDirection: "asc",
   pageSize: 50,
 };
+const DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
 
 function subscribePreferences(onChange: () => void) {
   window.addEventListener("storage", onChange);
@@ -210,7 +221,6 @@ export function WorkspaceFileList({
     [preferencesSnapshot]
   );
   const { viewMode, sortField, sortDirection, pageSize } = preferences;
-  const selectionTimer = useRef<number | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const sortedEntries = useMemo(
     () =>
@@ -246,13 +256,6 @@ export function WorkspaceFileList({
     selectedPaths.has(entry.logicalPath)
   );
 
-  useEffect(
-    () => () => {
-      if (selectionTimer.current !== null)
-        window.clearTimeout(selectionTimer.current);
-    },
-    []
-  );
   useEffect(() => {
     if (selectAllRef.current)
       selectAllRef.current.indeterminate = someSelected && !allSelected;
@@ -293,26 +296,11 @@ export function WorkspaceFileList({
             className={`flex min-w-0 focus-visible:outline-none ${iconMode ? "w-full flex-col items-center gap-2 text-center" : "flex-1 items-center gap-3 text-left"}`}
             aria-label={entry.name}
             aria-pressed={selected}
-            onClick={() => {
-              if (selectionTimer.current !== null)
-                window.clearTimeout(selectionTimer.current);
-              selectionTimer.current = window.setTimeout(() => {
-                selectionTimer.current = null;
-                onSelect(entry);
-              }, 300);
-            }}
-            onDoubleClick={() => {
-              if (selectionTimer.current !== null)
-                window.clearTimeout(selectionTimer.current);
-              selectionTimer.current = null;
-              onOpen(entry);
-            }}
+            onClick={() => onSelect(entry)}
+            onDoubleClick={() => onOpen(entry)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
-                if (selectionTimer.current !== null)
-                  window.clearTimeout(selectionTimer.current);
-                selectionTimer.current = null;
                 onOpen(entry);
               }
             }}
@@ -343,16 +331,58 @@ export function WorkspaceFileList({
           {(viewMode === "list" || viewMode === "details") && (
             <span className="sr-only">{entry.kind}</span>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className={iconMode ? "absolute top-1 right-1" : undefined}
-            aria-label={`Actions for ${entry.name}`}
-            onClick={() => onSelect(entry)}
-          >
-            <MoreHorizontal />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className={iconMode ? "absolute top-1 right-1" : undefined}
+                  aria-label={`Actions for ${entry.name}`}
+                  onClick={() => onSelect(entry)}
+                />
+              }
+            >
+              <MoreHorizontal />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onOpen(entry)}>
+                {entry.kind === "folder" ? "Open folder" : "Open details"}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                render={
+                  <a
+                    href={openUrl(entry)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  />
+                }
+              >
+                Open in new tab
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                render={<a href={downloadUrl(entry.logicalPath)} />}
+              >
+                Download
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onToggleFavorite(entry)}>
+                {isFavorite(entry.logicalPath)
+                  ? "Remove from favorites"
+                  : "Add to favorites"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onRename(entry)}>
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => onDelete(entry)}
+              >
+                Move to Recycle bin
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuItem onClick={() => onOpen(entry)}>
@@ -418,12 +448,12 @@ export function WorkspaceFileList({
               <input
                 ref={selectAllRef}
                 type="checkbox"
-                aria-label="Select all items in current folder"
+                 aria-label="Select all items in current folder"
                 checked={allSelected}
                 onChange={(event) => onToggleAllSelection(event.target.checked)}
                 className="size-4 rounded border-input accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
-              Select all
+              Select all {entries.length}
             </label>
           )}
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -595,8 +625,5 @@ function formatSize(size: number): string {
 }
 
 function formatDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return DATE_FORMATTER.format(new Date(value));
 }

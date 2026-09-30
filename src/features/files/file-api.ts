@@ -17,6 +17,26 @@ export class FileApiError extends Error {
   }
 }
 
+export function describeFileError(error: unknown, fallback: string): string {
+  if (!(error instanceof FileApiError))
+    return error instanceof Error ? error.message : fallback;
+
+  return (
+    {
+      ANONYMOUS_READ_ONLY: "Sign in to change files.",
+      ARCHIVE_TOO_LARGE: "That archive is too large to process.",
+      CONFLICT: "An item with that name already exists.",
+      CONFLICT_LIMIT: "Too many name conflicts were found. Try a smaller upload.",
+      FILESYSTEM_ERROR: "The fileserver could not complete that request.",
+      INVALID_ORIGIN: "This action was blocked by the security policy. Refresh and try again.",
+      INVALID_UPLOAD: "Choose a valid file and try again.",
+      NOT_FOUND: "That file or folder is no longer available.",
+      RECYCLE_ENTRY_NOT_ACTIVE: "That Recycle bin item is no longer available.",
+      UPLOAD_CANCELLED: "Upload cancelled.",
+    } as Record<string, string>
+  )[error.code] ?? "The fileserver could not complete that request.";
+}
+
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
