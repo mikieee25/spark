@@ -365,7 +365,6 @@ export function WorkspaceFileList({
                   size="icon-sm"
                   className={iconMode ? "absolute top-1 right-1" : undefined}
                   aria-label={`Actions for ${entry.name}`}
-                  onClick={() => onSelect(entry)}
                 />
               }
             >

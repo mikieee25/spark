@@ -1018,8 +1018,22 @@ describe("FileWorkspace", () => {
       screen.getByRole("button", { name: "Actions for Reports" })
     );
     expect(
-      screen.getByRole("link", { name: "Download folder" })
+      screen.getByRole("menuitem", { name: "Download" })
     ).toHaveAttribute("href", "/api/files/download?path=Reports");
+  });
+
+  it("does not open the details drawer from the actions menu", () => {
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Q3 Energy Outlook.pdf" })
+    );
+
+    expect(
+      screen.getByRole("menuitem", { name: "Open details" })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "Selected item details" })
+    ).not.toBeInTheDocument();
   });
 
   it("selects all items in the current folder across pages", () => {
