@@ -111,6 +111,11 @@ const AUTO_REFRESH_OPTIONS = [
 ] as const;
 const FOLDER_CACHE_LIMIT = 64;
 const SEARCH_INDEX_REFRESH_MS = 2_000;
+const FOLDER_HISTORY_STATE_KEY = "sparkFolderPath";
+
+type NavigationOptions = Readonly<{
+  history?: "push" | "none";
+}>;
 
 function rememberFolder(
   cache: Map<string, FileEntry[]>,
@@ -136,6 +141,20 @@ function baseName(logicalPath: string): string {
 
 function parentPath(logicalPath: string): string {
   return logicalPath.split("/").slice(0, -1).join("/");
+}
+
+function folderHistoryPath(state: unknown): string | null {
+  if (!state || typeof state !== "object") return null;
+  const path = (state as Record<string, unknown>)[FOLDER_HISTORY_STATE_KEY];
+  return typeof path === "string" ? path : null;
+}
+
+function folderHistoryUrl(logicalPath: string): string {
+  const url = new URL(window.location.href);
+  if (logicalPath) url.searchParams.set("path", logicalPath);
+  else url.searchParams.delete("path");
+  url.searchParams.delete("preview");
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 function FileGlyph({ entry }: { entry: Pick<FileEntry, "kind"> }) {
@@ -269,6 +288,9 @@ export function FileWorkspace({
   const undoTimer = useRef<number | null>(null);
   const autoRefreshController = useRef<AbortController>(null);
   const navigationController = useRef<AbortController>(null);
+  const navigateToRef = useRef<
+    ((logicalPath: string, options?: NavigationOptions) => Promise<void>) | null
+  >(null);
   const navigationSequence = useRef(0);
   const folderCache = useRef(
     new Map<string, FileEntry[]>(
@@ -465,7 +487,22 @@ export function FileWorkspace({
     }
   }, []);
 
-  async function navigateTo(logicalPath: string) {
+  const navigateTo = useCallback(async function navigateTo(
+    logicalPath: string,
+    options: NavigationOptions = {}
+  ) {
+    if (options.history !== "none") {
+      const state = window.history.state;
+      const baseState =
+        state && typeof state === "object"
+          ? (state as Record<string, unknown>)
+          : {};
+      window.history.pushState(
+        { ...baseState, [FOLDER_HISTORY_STATE_KEY]: logicalPath },
+        "",
+        folderHistoryUrl(logicalPath)
+      );
+    }
     autoRefreshController.current?.abort();
     navigationController.current?.abort();
     const controller = new AbortController();
@@ -505,7 +542,35 @@ export function FileWorkspace({
         navigationController.current = null;
       }
     }
-  }
+  }, [refreshRecent]);
+
+  useEffect(() => {
+    navigateToRef.current = navigateTo;
+    return () => {
+      if (navigateToRef.current === navigateTo) navigateToRef.current = null;
+    };
+  }, [navigateTo]);
+
+  useEffect(() => {
+    const state = window.history.state;
+    const baseState =
+      state && typeof state === "object"
+        ? (state as Record<string, unknown>)
+        : {};
+    window.history.replaceState(
+      { ...baseState, [FOLDER_HISTORY_STATE_KEY]: initialPath },
+      "",
+      folderHistoryUrl(initialPath)
+    );
+
+    const handlePopState = (event: PopStateEvent) => {
+      const logicalPath = folderHistoryPath(event.state);
+      if (logicalPath === null) return;
+      void navigateToRef.current?.(logicalPath, { history: "none" });
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [initialPath]);
 
   async function openFolder(entry: Pick<FileEntry, "kind" | "logicalPath">) {
     if (entry.kind !== "folder") {
@@ -1245,7 +1310,7 @@ export function FileWorkspace({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => void navigateTo(currentPath)}
+              onClick={() => void navigateTo(currentPath, { history: "none" })}
               aria-label="Retry folder"
             >
               Retry

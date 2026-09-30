@@ -602,6 +602,45 @@ describe("FileWorkspace", () => {
     );
   });
 
+  it("uses browser history for folder navigation", async () => {
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      if (String(input).includes("/api/discovery/recent"))
+        return new Response(JSON.stringify({ items: [] }), { status: 200 });
+      const path = new URL(String(input), "http://spark.test").searchParams.get(
+        "path"
+      ) ?? "";
+      return new Response(
+        JSON.stringify({
+          path,
+          entries: path === "Reports" ? [] : entries,
+        }),
+        { status: 200 }
+      );
+    });
+    render(<FileWorkspace initialPath="" initialEntries={entries} />);
+
+    fireEvent.doubleClick(screen.getByRole("button", { name: "Reports" }));
+    expect(window.location.search).toBe("?path=Reports");
+    expect(window.history.state).toMatchObject({ sparkFolderPath: "Reports" });
+    expect(await screen.findByText("This folder is empty")).toBeInTheDocument();
+
+    fireEvent(
+      window,
+      new PopStateEvent("popstate", { state: { sparkFolderPath: "" } })
+    );
+    expect(await screen.findByText("Q3 Energy Outlook.pdf")).toBeInTheDocument();
+
+    fireEvent(
+      window,
+      new PopStateEvent("popstate", {
+        state: { sparkFolderPath: "Reports" },
+      })
+    );
+    expect(await screen.findByText("This folder is empty")).toBeInTheDocument();
+
+    window.history.replaceState(null, "", "/files");
+  });
+
   it("selects an item on single click and opens its folder on double click", async () => {
     vi.mocked(fetch).mockImplementation(
       async (input) =>
