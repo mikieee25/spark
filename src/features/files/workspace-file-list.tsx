@@ -63,6 +63,7 @@ const DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "short",
 });
+const FOLDER_CLICK_DELAY_MS = 220;
 
 function subscribePreferences(onChange: () => void) {
   window.addEventListener("storage", onChange);
@@ -221,6 +222,7 @@ export function WorkspaceFileList({
     [preferencesSnapshot]
   );
   const { viewMode, sortField, sortDirection, pageSize } = preferences;
+  const folderClickTimer = useRef<number | null>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const sortedEntries = useMemo(
     () =>
@@ -256,6 +258,13 @@ export function WorkspaceFileList({
     selectedPaths.has(entry.logicalPath)
   );
 
+  useEffect(
+    () => () => {
+      if (folderClickTimer.current !== null)
+        window.clearTimeout(folderClickTimer.current);
+    },
+    []
+  );
   useEffect(() => {
     if (selectAllRef.current)
       selectAllRef.current.indeterminate = someSelected && !allSelected;
@@ -296,8 +305,24 @@ export function WorkspaceFileList({
             className={`flex min-w-0 focus-visible:outline-none ${iconMode ? "w-full flex-col items-center gap-2 text-center" : "flex-1 items-center gap-3 text-left"}`}
             aria-label={entry.name}
             aria-pressed={selected}
-            onClick={() => onSelect(entry)}
-            onDoubleClick={() => onOpen(entry)}
+            onClick={() => {
+              if (entry.kind !== "folder") {
+                onSelect(entry);
+                return;
+              }
+              if (folderClickTimer.current !== null)
+                window.clearTimeout(folderClickTimer.current);
+              folderClickTimer.current = window.setTimeout(() => {
+                folderClickTimer.current = null;
+                onSelect(entry);
+              }, FOLDER_CLICK_DELAY_MS);
+            }}
+            onDoubleClick={() => {
+              if (folderClickTimer.current !== null)
+                window.clearTimeout(folderClickTimer.current);
+              folderClickTimer.current = null;
+              onOpen(entry);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
